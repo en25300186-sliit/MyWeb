@@ -1,0 +1,112 @@
+{% extends 'base.html' %}
+{% block title %}Study Timer – EngiHub{% endblock %}
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-6 text-center">
+    <h2 class="fw-bold mb-1"><i class="bi bi-stopwatch text-primary me-2"></i>Study Timer</h2>
+    <p class="text-muted mb-4">Pomodoro-style focus timer: 25 min work / 5 min break</p>
+
+    <div class="card border-0 shadow-lg">
+      <div class="card-body py-5">
+        <div class="mb-3">
+          <span id="modeLabel" class="badge bg-primary fs-6 px-3 py-2">Work Session</span>
+        </div>
+        <div class="timer-display mb-4" id="timerDisplay">25:00</div>
+        <div class="d-flex justify-content-center gap-3 mb-4">
+          <button id="startBtn" class="btn btn-primary btn-lg px-4" onclick="startTimer()">
+            <i class="bi bi-play-fill me-1"></i>Start
+          </button>
+          <button id="pauseBtn" class="btn btn-warning btn-lg px-4" onclick="pauseTimer()" disabled>
+            <i class="bi bi-pause-fill me-1"></i>Pause
+          </button>
+          <button class="btn btn-outline-secondary btn-lg px-4" onclick="resetTimer()">
+            <i class="bi bi-arrow-counterclockwise me-1"></i>Reset
+          </button>
+        </div>
+        <div class="row g-2 justify-content-center">
+          <div class="col-auto">
+            <button class="btn btn-sm btn-outline-primary" onclick="setMode('work')">Work (25m)</button>
+          </div>
+          <div class="col-auto">
+            <button class="btn btn-sm btn-outline-success" onclick="setMode('short')">Short Break (5m)</button>
+          </div>
+          <div class="col-auto">
+            <button class="btn btn-sm btn-outline-info" onclick="setMode('long')">Long Break (15m)</button>
+          </div>
+        </div>
+        <p class="text-muted mt-4 mb-0">Sessions completed: <strong id="sessionCount">0</strong></p>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let timer = null;
+let secondsLeft = 25 * 60;
+let sessionCount = 0;
+let currentMode = 'work';
+
+const modes = {
+  work: { seconds: 25 * 60, label: 'Work Session', badge: 'bg-primary' },
+  short: { seconds: 5 * 60, label: 'Short Break', badge: 'bg-success' },
+  long: { seconds: 15 * 60, label: 'Long Break', badge: 'bg-info' },
+};
+
+function formatTime(s) {
+  const m = Math.floor(s / 60);
+  const sec = s % 60;
+  return `${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`;
+}
+
+function updateDisplay() {
+  document.getElementById('timerDisplay').textContent = formatTime(secondsLeft);
+  document.title = `${formatTime(secondsLeft)} – EngiHub Timer`;
+}
+
+function startTimer() {
+  if (timer) return;
+  document.getElementById('startBtn').disabled = true;
+  document.getElementById('pauseBtn').disabled = false;
+  timer = setInterval(() => {
+    secondsLeft--;
+    updateDisplay();
+    if (secondsLeft <= 0) {
+      clearInterval(timer);
+      timer = null;
+      if (currentMode === 'work') sessionCount++;
+      document.getElementById('sessionCount').textContent = sessionCount;
+      document.getElementById('startBtn').disabled = false;
+      document.getElementById('pauseBtn').disabled = true;
+      alert(currentMode === 'work' ? '🎉 Work session complete! Time for a break.' : '⏰ Break over! Back to work.');
+    }
+  }, 1000);
+}
+
+function pauseTimer() {
+  clearInterval(timer);
+  timer = null;
+  document.getElementById('startBtn').disabled = false;
+  document.getElementById('pauseBtn').disabled = true;
+}
+
+function resetTimer() {
+  pauseTimer();
+  secondsLeft = modes[currentMode].seconds;
+  updateDisplay();
+}
+
+function setMode(mode) {
+  currentMode = mode;
+  pauseTimer();
+  secondsLeft = modes[mode].seconds;
+  const modeLabel = document.getElementById('modeLabel');
+  modeLabel.textContent = modes[mode].label;
+  modeLabel.className = `badge ${modes[mode].badge} fs-6 px-3 py-2`;
+  updateDisplay();
+}
+
+updateDisplay();
+</script>
+{% endblock %}

@@ -1,0 +1,47 @@
+{% extends 'base.html' %}
+{% block title %}{{ action }} Note – EngiHub{% endblock %}
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-7">
+    <div class="d-flex align-items-center mb-4">
+      <a href="{% url 'study_notes' %}" class="btn btn-outline-secondary me-3">
+        <i class="bi bi-arrow-left"></i>
+      </a>
+      <h2 class="fw-bold mb-0">{{ action }} Note</h2>
+    </div>
+    <div class="card border-0 shadow-sm">
+      <div class="card-body p-4">
+        <form method="post">
+          {% csrf_token %}
+          {% for field in form %}
+          <div class="mb-3">
+            <label for="{{ field.id_for_label }}" class="form-label fw-semibold">{{ field.label }}</label>
+            {% if field.field.widget.input_type == 'textarea' %}
+              <textarea name="{{ field.html_name }}"
+                        id="{{ field.id_for_label }}"
+                        rows="8"
+                        class="form-control {% if field.errors %}is-invalid{% endif %}">{{ field.value|default:'' }}</textarea>
+            {% else %}
+              <input type="{{ field.field.widget.input_type }}"
+                     name="{{ field.html_name }}"
+                     id="{{ field.id_for_label }}"
+                     value="{{ field.value|default:'' }}"
+                     class="form-control {% if field.errors %}is-invalid{% endif %}" />
+            {% endif %}
+            {% for error in field.errors %}
+              <div class="invalid-feedback">{{ error }}</div>
+            {% endfor %}
+          </div>
+          {% endfor %}
+          <div class="d-flex gap-2">
+            <button type="submit" class="btn btn-primary">
+              <i class="bi bi-save me-1"></i>Save Note
+            </button>
+            <a href="{% url 'study_notes' %}" class="btn btn-outline-secondary">Cancel</a>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
