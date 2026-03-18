@@ -1,8 +1,9 @@
 from django.urls import path
+from django.views.generic import RedirectView
 from . import views
 
 urlpatterns = [
-    path('', views.dashboard),
+    path('', RedirectView.as_view(pattern_name='dashboard', permanent=False)),
     path('dashboard/', views.dashboard, name='dashboard'),
     path('tools/unit-converter/', views.unit_converter, name='unit_converter'),
     path('tools/gpa-calculator/', views.gpa_calculator, name='gpa_calculator'),
