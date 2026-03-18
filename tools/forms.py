@@ -1,0 +1,29 @@
+from django import forms
+from .models import StudyNote, TodoItem, Expense
+
+
+class StudyNoteForm(forms.ModelForm):
+    class Meta:
+        model = StudyNote
+        fields = ['title', 'subject', 'content']
+        widgets = {
+            'content': forms.Textarea(attrs={'rows': 8}),
+        }
+
+
+class TodoForm(forms.ModelForm):
+    class Meta:
+        model = TodoItem
+        fields = ['title', 'description', 'priority', 'due_date']
+        widgets = {
+            'due_date': forms.DateInput(attrs={'type': 'date'}),
+        }
+
+
+class ExpenseForm(forms.ModelForm):
+    class Meta:
+        model = Expense
+        fields = ['title', 'amount', 'category', 'date', 'note']
+        widgets = {
+            'date': forms.DateInput(attrs={'type': 'date'}),
+        }

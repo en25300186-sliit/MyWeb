@@ -1,0 +1,117 @@
+{% extends 'base.html' %}
+{% block title %}Dashboard – EngiHub{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <div>
+    <h1 class="fw-bold mb-0">Dashboard</h1>
+    <p class="text-muted">Welcome back, <strong>{{ user.first_name|default:user.username }}</strong>! 👋</p>
+  </div>
+</div>
+
+<!-- Stats Row -->
+<div class="row g-3 mb-4">
+  <div class="col-md-4">
+    <div class="card stat-card border-0 shadow-sm h-100">
+      <div class="card-body text-center py-4">
+        <i class="bi bi-journal-text text-primary" style="font-size:2rem;"></i>
+        <h2 class="fw-bold mt-2 mb-0">{{ notes_count }}</h2>
+        <p class="text-muted mb-0">Study Notes</p>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="card stat-card border-0 shadow-sm h-100">
+      <div class="card-body text-center py-4">
+        <i class="bi bi-check2-square text-warning" style="font-size:2rem;"></i>
+        <h2 class="fw-bold mt-2 mb-0">{{ todos_count }}</h2>
+        <p class="text-muted mb-0">Pending Tasks</p>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="card stat-card border-0 shadow-sm h-100">
+      <div class="card-body text-center py-4">
+        <i class="bi bi-wallet2 text-success" style="font-size:2rem;"></i>
+        <h2 class="fw-bold mt-2 mb-0">${{ total_expenses }}</h2>
+        <p class="text-muted mb-0">Total Expenses</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Tools Grid -->
+<h4 class="fw-bold mb-3"><i class="bi bi-tools me-2 text-primary"></i>Your Tools</h4>
+<div class="row g-3">
+
+  <div class="col-sm-6 col-lg-3">
+    <a href="{% url 'unit_converter' %}" class="text-decoration-none">
+      <div class="card tool-card border-0 shadow-sm h-100 text-center p-3">
+        <div class="tool-icon mb-3"><i class="bi bi-arrow-left-right"></i></div>
+        <h6 class="fw-bold mb-1">Unit Converter</h6>
+        <p class="text-muted small mb-0">Convert between units for length, mass, temperature, and more</p>
+      </div>
+    </a>
+  </div>
+
+  <div class="col-sm-6 col-lg-3">
+    <a href="{% url 'gpa_calculator' %}" class="text-decoration-none">
+      <div class="card tool-card border-0 shadow-sm h-100 text-center p-3">
+        <div class="tool-icon mb-3"><i class="bi bi-mortarboard"></i></div>
+        <h6 class="fw-bold mb-1">GPA Calculator</h6>
+        <p class="text-muted small mb-0">Calculate your GPA based on course grades and credit hours</p>
+      </div>
+    </a>
+  </div>
+
+  <div class="col-sm-6 col-lg-3">
+    <a href="{% url 'resistor_calculator' %}" class="text-decoration-none">
+      <div class="card tool-card border-0 shadow-sm h-100 text-center p-3">
+        <div class="tool-icon mb-3"><i class="bi bi-cpu"></i></div>
+        <h6 class="fw-bold mb-1">Resistor Calculator</h6>
+        <p class="text-muted small mb-0">Decode resistor color bands to get resistance values</p>
+      </div>
+    </a>
+  </div>
+
+  <div class="col-sm-6 col-lg-3">
+    <a href="{% url 'study_notes' %}" class="text-decoration-none">
+      <div class="card tool-card border-0 shadow-sm h-100 text-center p-3">
+        <div class="tool-icon mb-3"><i class="bi bi-journal-text"></i></div>
+        <h6 class="fw-bold mb-1">Study Notes</h6>
+        <p class="text-muted small mb-0">Create and manage notes organized by subject</p>
+      </div>
+    </a>
+  </div>
+
+  <div class="col-sm-6 col-lg-3">
+    <a href="{% url 'todo_list' %}" class="text-decoration-none">
+      <div class="card tool-card border-0 shadow-sm h-100 text-center p-3">
+        <div class="tool-icon mb-3"><i class="bi bi-check2-square"></i></div>
+        <h6 class="fw-bold mb-1">To-Do List</h6>
+        <p class="text-muted small mb-0">Track tasks with priorities and due dates</p>
+      </div>
+    </a>
+  </div>
+
+  <div class="col-sm-6 col-lg-3">
+    <a href="{% url 'budget_tracker' %}" class="text-decoration-none">
+      <div class="card tool-card border-0 shadow-sm h-100 text-center p-3">
+        <div class="tool-icon mb-3"><i class="bi bi-wallet2"></i></div>
+        <h6 class="fw-bold mb-1">Budget Tracker</h6>
+        <p class="text-muted small mb-0">Track your expenses by category with visual charts</p>
+      </div>
+    </a>
+  </div>
+
+  <div class="col-sm-6 col-lg-3">
+    <a href="{% url 'study_timer' %}" class="text-decoration-none">
+      <div class="card tool-card border-0 shadow-sm h-100 text-center p-3">
+        <div class="tool-icon mb-3"><i class="bi bi-stopwatch"></i></div>
+        <h6 class="fw-bold mb-1">Study Timer</h6>
+        <p class="text-muted small mb-0">Pomodoro-style timer for focused study sessions</p>
+      </div>
+    </a>
+  </div>
+
+</div>
+{% endblock %}

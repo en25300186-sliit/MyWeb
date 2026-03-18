@@ -1,0 +1,93 @@
+:root {
+  --primary: #1a73e8;
+  --secondary: #0d47a1;
+  --accent: #e8f0fe;
+  --body-bg: #f4f6fb;
+  --card-border-radius: 0.75rem;
+}
+
+body {
+  background-color: var(--body-bg);
+  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+}
+
+/* Navbar */
+.navbar-brand {
+  letter-spacing: 1px;
+}
+
+/* Cards */
+.card {
+  border-radius: var(--card-border-radius) !important;
+  transition: box-shadow 0.2s ease, transform 0.2s ease;
+}
+
+.card:hover {
+  box-shadow: 0 8px 24px rgba(0,0,0,0.12) !important;
+}
+
+/* Tool Cards */
+.tool-card {
+  cursor: pointer;
+  transition: box-shadow 0.2s ease, transform 0.2s ease;
+}
+
+.tool-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 8px 24px rgba(26, 115, 232, 0.15) !important;
+}
+
+.tool-icon {
+  font-size: 2.5rem;
+  color: var(--primary);
+}
+
+/* Stat cards */
+.stat-card:hover {
+  transform: translateY(-2px);
+}
+
+/* Timer */
+.timer-display {
+  font-size: 5rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--secondary);
+  letter-spacing: 4px;
+  font-family: 'Courier New', monospace;
+}
+
+/* Footer */
+.footer {
+  margin-top: auto;
+}
+
+/* Form styling */
+.form-control:focus,
+.form-select:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 0.2rem rgba(26, 115, 232, 0.25);
+}
+
+/* Alert improvements */
+.alert {
+  border-radius: var(--card-border-radius);
+}
+
+/* Badge improvements */
+.bg-primary-subtle {
+  background-color: var(--accent) !important;
+}
+
+/* Resistor SVG */
+.resistor-diagram svg {
+  filter: drop-shadow(0 2px 4px rgba(0,0,0,0.15));
+}
+
+/* Active nav link */
+.nav-link.active {
+  font-weight: 600;
+  color: #fff !important;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
