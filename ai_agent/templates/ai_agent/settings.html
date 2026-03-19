@@ -49,6 +49,7 @@
           <div class="mb-3">
             <label class="form-label fw-semibold" for="id_preferred_model">Preferred Model</label>
             {{ form.preferred_model }}
+            <datalist id="model-suggestions"></datalist>
             <div class="form-text">{{ form.fields.preferred_model.help_text }}</div>
             {% if form.preferred_model.errors %}
               <div class="text-danger small mt-1">{{ form.preferred_model.errors }}</div>
@@ -86,25 +87,39 @@
       <div class="card-body">
         <h6 class="card-title"><i class="bi bi-book me-1"></i>Provider Reference</h6>
         <table class="table table-sm mb-0">
-          <thead><tr><th>Provider</th><th>Base URL</th><th>Key Type</th><th>Example Model</th></tr></thead>
+          <thead><tr><th>Provider</th><th>Base URL</th><th>Key Type</th><th>Available Models</th></tr></thead>
           <tbody>
             <tr>
               <td><span class="badge bg-dark">GitHub Models</span></td>
               <td><code class="small">models.inference.ai.azure.com</code></td>
               <td>GitHub PAT</td>
-              <td><code class="small">openai/gpt-4o-mini</code></td>
+              <td>
+                <code class="small">openai/gpt-4o-mini</code>,
+                <code class="small">openai/gpt-4o</code>,
+                <code class="small">meta/llama-3.3-70b-instruct</code>,
+                <code class="small">meta/llama-3.1-70b-instruct</code>,
+                <code class="small">microsoft/phi-4</code>
+              </td>
             </tr>
             <tr>
               <td><span class="badge bg-success">OpenAI</span></td>
               <td><code class="small">api.openai.com/v1</code></td>
               <td>OpenAI API Key</td>
-              <td><code class="small">gpt-4o-mini</code></td>
+              <td>
+                <code class="small">gpt-4o-mini</code>,
+                <code class="small">gpt-4o</code>,
+                <code class="small">gpt-4-turbo</code>
+              </td>
             </tr>
             <tr>
               <td><span class="badge bg-warning text-dark">Groq</span></td>
               <td><code class="small">api.groq.com/openai/v1</code></td>
               <td>Groq API Key</td>
-              <td><code class="small">llama3-8b-8192</code></td>
+              <td>
+                <code class="small">llama3-8b-8192</code>,
+                <code class="small">llama3-70b-8192</code>,
+                <code class="small">mixtral-8x7b-32768</code>
+              </td>
             </tr>
           </tbody>
         </table>
@@ -119,14 +134,30 @@
 <script>
 // Auto-fill the preferred model field when the provider changes
 const providerDefaults = {{ provider_defaults|safe }};
+const providerModels = {{ provider_models|safe }};
 const providerSelect = document.getElementById('id_provider');
 const modelInput = document.getElementById('id_preferred_model');
+const modelDatalist = document.getElementById('model-suggestions');
+
+function updateModelSuggestions(providerKey) {
+  modelDatalist.innerHTML = '';
+  const models = providerModels[providerKey] || [];
+  models.forEach(function (m) {
+    const opt = document.createElement('option');
+    opt.value = m;
+    modelDatalist.appendChild(opt);
+  });
+}
 
 providerSelect.addEventListener('change', function () {
   const key = this.value;
   if (providerDefaults[key]) {
     modelInput.value = providerDefaults[key];
   }
+  updateModelSuggestions(key);
 });
+
+// Populate suggestions on page load for the currently selected provider
+updateModelSuggestions(providerSelect.value);
 </script>
 {% endblock %}

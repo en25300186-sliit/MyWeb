@@ -11,16 +11,38 @@ PROVIDER_CONFIG = {
         'base_url': 'https://models.inference.ai.azure.com',
         'default_model': 'openai/gpt-4o-mini',
         'label': 'GitHub Models (Default)',
+        'models': [
+            'openai/gpt-4o-mini',
+            'openai/gpt-4o',
+            'meta/llama-3.1-8b-instruct',
+            'meta/llama-3.1-70b-instruct',
+            'meta/llama-3.3-70b-instruct',
+            'microsoft/phi-4',
+            'mistral-ai/mistral-small',
+            'cohere/cohere-command-r',
+        ],
     },
     'openai': {
         'base_url': 'https://api.openai.com/v1',
         'default_model': 'gpt-4o-mini',
         'label': 'OpenAI',
+        'models': [
+            'gpt-4o-mini',
+            'gpt-4o',
+            'gpt-4-turbo',
+            'gpt-3.5-turbo',
+        ],
     },
     'groq': {
         'base_url': 'https://api.groq.com/openai/v1',
         'default_model': 'llama3-8b-8192',
         'label': 'Groq',
+        'models': [
+            'llama3-8b-8192',
+            'llama3-70b-8192',
+            'mixtral-8x7b-32768',
+            'gemma-7b-it',
+        ],
     },
 }
 

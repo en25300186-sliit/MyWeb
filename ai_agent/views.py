@@ -36,13 +36,15 @@ def api_key_settings(request):
     else:
         form = APIKeySettingsForm(instance=instance)
 
-    # Build provider → default model map for JS auto-fill
+    # Build provider → default model map and provider → models list for JS auto-fill
     provider_defaults = {k: v['default_model'] for k, v in PROVIDER_CONFIG.items()}
+    provider_models = {k: v.get('models', []) for k, v in PROVIDER_CONFIG.items()}
 
     return render(request, 'ai_agent/settings.html', {
         'form': form,
         'has_key': has_key,
         'provider_defaults': json.dumps(provider_defaults),
+        'provider_models': json.dumps(provider_models),
     })
 
 
