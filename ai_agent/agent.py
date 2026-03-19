@@ -172,7 +172,6 @@ def run_agent(
                 model=model,
                 messages=messages,
                 tools=tool_schemas,
-                tool_choice='auto',
             )
         except Exception as exc:  # noqa: BLE001
             logger.exception('API call failed for user %s', user.pk)
