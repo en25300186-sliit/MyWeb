@@ -1,0 +1,132 @@
+{% extends 'base.html' %}
+{% load tools_extras %}
+{% block title %}Timetable – EngiHub{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <div>
+    <h1 class="fw-bold mb-0"><i class="bi bi-calendar-week me-2 text-primary"></i>Timetable</h1>
+    <p class="text-muted mb-0">Manage your weekly schedule and one-time events</p>
+  </div>
+  <a href="{% url 'timetable_create' %}" class="btn btn-primary">
+    <i class="bi bi-plus-lg me-1"></i>Add Entry
+  </a>
+</div>
+
+<!-- Notification permission banner -->
+<div id="notifBanner" class="alert alert-info alert-dismissible d-none" role="alert">
+  <i class="bi bi-bell me-2"></i>
+  Enable browser notifications to get alerts when a class is about to start.
+  <button class="btn btn-sm btn-primary ms-3" id="enableNotifBtn">Enable Notifications</button>
+  <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+
+<!-- Weekly Timetable Grid -->
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-header bg-white">
+    <h5 class="fw-bold mb-0"><i class="bi bi-repeat me-2 text-primary"></i>Weekly Schedule</h5>
+  </div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-bordered mb-0 timetable-grid">
+        <thead class="table-primary">
+          <tr>
+            {% for idx, day in days %}
+            <th class="text-center {% if idx == today_weekday %}bg-primary text-white{% endif %}" style="min-width:120px;">
+              {{ day }}
+              {% if idx == today_weekday %}<span class="badge bg-white text-primary ms-1" style="font-size:.65rem;">Today</span>{% endif %}
+            </th>
+            {% endfor %}
+          </tr>
+        </thead>
+        <tbody>
+          <tr style="vertical-align:top;">
+            {% for idx, day in days %}
+            <td class="p-2 {% if idx == today_weekday %}bg-primary bg-opacity-10{% endif %}">
+              {% for entry in weekly_by_day|dict_get:idx %}
+              <div class="timetable-chip mb-2 p-2 rounded" style="border-left:4px solid {{ entry.color }};background:{{ entry.color }}18;">
+                <div class="fw-semibold small">{{ entry.title }}</div>
+                <div class="text-muted" style="font-size:.75rem;">
+                  <i class="bi bi-clock me-1"></i>{{ entry.start_time|time:"H:i" }}–{{ entry.end_time|time:"H:i" }}
+                </div>
+                {% if entry.location %}<div class="text-muted" style="font-size:.72rem;"><i class="bi bi-geo-alt me-1"></i>{{ entry.location }}</div>{% endif %}
+                <span class="badge" style="background:{{ entry.color }};font-size:.65rem;">{{ entry.get_event_type_display }}</span>
+                <div class="mt-1 d-flex gap-1">
+                  <a href="{% url 'timetable_edit' entry.pk %}" class="btn btn-outline-secondary btn-sm py-0 px-1" style="font-size:.7rem;"><i class="bi bi-pencil"></i></a>
+                  <form method="post" action="{% url 'timetable_delete' entry.pk %}" class="d-inline">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-outline-danger btn-sm py-0 px-1" style="font-size:.7rem;" onclick="return confirm('Delete this entry?')"><i class="bi bi-trash"></i></button>
+                  </form>
+                </div>
+              </div>
+              {% empty %}
+              <span class="text-muted small">–</span>
+              {% endfor %}
+            </td>
+            {% endfor %}
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- Upcoming specific-date events -->
+<div class="card border-0 shadow-sm">
+  <div class="card-header bg-white d-flex justify-content-between align-items-center">
+    <h5 class="fw-bold mb-0"><i class="bi bi-calendar-event me-2 text-warning"></i>Upcoming One-Time Events</h5>
+  </div>
+  <div class="card-body p-0">
+    {% if upcoming %}
+    <div class="list-group list-group-flush">
+      {% for entry in upcoming %}
+      <div class="list-group-item d-flex align-items-center gap-3 py-3">
+        <div class="timetable-color-bar" style="background:{{ entry.color }};width:5px;height:48px;border-radius:3px;flex-shrink:0;"></div>
+        <div class="flex-grow-1">
+          <div class="fw-semibold">{{ entry.title }}
+            <span class="badge ms-1" style="background:{{ entry.color }};">{{ entry.get_event_type_display }}</span>
+          </div>
+          <small class="text-muted">
+            <i class="bi bi-calendar3 me-1"></i>{{ entry.specific_date }}
+            &nbsp;<i class="bi bi-clock me-1"></i>{{ entry.start_time|time:"H:i" }}–{{ entry.end_time|time:"H:i" }}
+            {% if entry.location %}&nbsp;<i class="bi bi-geo-alt me-1"></i>{{ entry.location }}{% endif %}
+          </small>
+          {% if entry.description %}<div class="text-muted small mt-1">{{ entry.description }}</div>{% endif %}
+        </div>
+        <div class="d-flex gap-2">
+          <a href="{% url 'timetable_edit' entry.pk %}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-pencil"></i></a>
+          <form method="post" action="{% url 'timetable_delete' entry.pk %}" class="d-inline">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-outline-danger btn-sm" onclick="return confirm('Delete this entry?')"><i class="bi bi-trash"></i></button>
+          </form>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="text-center py-4 text-muted">
+      <i class="bi bi-calendar-x" style="font-size:2rem;"></i>
+      <p class="mt-2 mb-0">No upcoming one-time events.</p>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Show notification permission banner if not yet granted
+(function() {
+  if ('Notification' in window && Notification.permission === 'default') {
+    document.getElementById('notifBanner').classList.remove('d-none');
+  }
+  document.getElementById('enableNotifBtn')?.addEventListener('click', function() {
+    Notification.requestPermission().then(function(perm) {
+      if (perm === 'granted') {
+        document.getElementById('notifBanner').classList.add('d-none');
+      }
+    });
+  });
+})();
+</script>
+{% endblock %}

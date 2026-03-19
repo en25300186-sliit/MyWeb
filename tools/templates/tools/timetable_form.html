@@ -1,0 +1,138 @@
+{% extends 'base.html' %}
+{% block title %}{{ action }} Timetable Entry – EngiHub{% endblock %}
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-7">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-primary text-white">
+        <h5 class="mb-0"><i class="bi bi-calendar-week me-2"></i>{{ action }} Timetable Entry</h5>
+      </div>
+      <div class="card-body p-4">
+        <form method="post" id="timetableForm">
+          {% csrf_token %}
+
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Title *</label>
+            {{ form.title.errors }}
+            <input type="text" name="title" class="form-control" value="{{ form.title.value|default:'' }}" required>
+          </div>
+
+          <div class="row mb-3">
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Event Type</label>
+              {{ form.event_type.errors }}
+              <select name="event_type" class="form-select">
+                {% for val, label in form.fields.event_type.choices %}
+                <option value="{{ val }}" {% if form.event_type.value == val %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Color</label>
+              {{ form.color.errors }}
+              <select name="color" class="form-select" id="colorSelect">
+                {% for val, label in form.fields.color.choices %}
+                <option value="{{ val }}" {% if form.color.value == val %}selected{% endif %} style="background:{{ val }};color:#fff;">{{ label }}</option>
+                {% endfor %}
+              </select>
+            </div>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Location</label>
+            {{ form.location.errors }}
+            <input type="text" name="location" class="form-control" value="{{ form.location.value|default:'' }}" placeholder="e.g. Room 301, Lab B">
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Description</label>
+            {{ form.description.errors }}
+            <textarea name="description" class="form-control" rows="3" placeholder="Optional notes...">{{ form.description.value|default:'' }}</textarea>
+          </div>
+
+          <hr>
+
+          <!-- Schedule type toggle -->
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Schedule Type</label>
+            <div class="d-flex gap-3">
+              <div class="form-check">
+                <input class="form-check-input" type="radio" name="is_weekly" id="schedWeekly" value="True"
+                  {% if form.is_weekly.value != False and form.is_weekly.value != 'False' %}checked{% endif %}>
+                <label class="form-check-label" for="schedWeekly">
+                  <i class="bi bi-repeat me-1"></i>Weekly (repeats every week)
+                </label>
+              </div>
+              <div class="form-check">
+                <input class="form-check-input" type="radio" name="is_weekly" id="schedSpecific" value="False"
+                  {% if form.is_weekly.value == False or form.is_weekly.value == 'False' %}checked{% endif %}>
+                <label class="form-check-label" for="schedSpecific">
+                  <i class="bi bi-calendar-event me-1"></i>Specific Date (one-time)
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <!-- Weekly: day of week -->
+          <div class="mb-3" id="weeklyFields">
+            <label class="form-label fw-semibold">Day of Week</label>
+            {{ form.day_of_week.errors }}
+            <select name="day_of_week" class="form-select">
+              <option value="">-- Select day --</option>
+              {% for val, label in form.fields.day_of_week.choices %}
+              {% if val != '' %}
+              <option value="{{ val }}" {% if form.day_of_week.value|stringformat:"s" == val|stringformat:"s" %}selected{% endif %}>{{ label }}</option>
+              {% endif %}
+              {% endfor %}
+            </select>
+          </div>
+
+          <!-- Specific date -->
+          <div class="mb-3 d-none" id="specificFields">
+            <label class="form-label fw-semibold">Date</label>
+            {{ form.specific_date.errors }}
+            <input type="date" name="specific_date" class="form-control" value="{{ form.specific_date.value|default:'' }}">
+          </div>
+
+          <div class="row mb-3">
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Start Time *</label>
+              {{ form.start_time.errors }}
+              <input type="time" name="start_time" class="form-control" value="{{ form.start_time.value|default:'' }}" required>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">End Time *</label>
+              {{ form.end_time.errors }}
+              <input type="time" name="end_time" class="form-control" value="{{ form.end_time.value|default:'' }}" required>
+            </div>
+          </div>
+
+          <div class="d-flex gap-2">
+            <button type="submit" class="btn btn-primary"><i class="bi bi-check-lg me-1"></i>Save Entry</button>
+            <a href="{% url 'timetable' %}" class="btn btn-outline-secondary">Cancel</a>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function() {
+  const weeklyFields = document.getElementById('weeklyFields');
+  const specificFields = document.getElementById('specificFields');
+
+  function toggleFields() {
+    const isWeekly = document.getElementById('schedWeekly').checked;
+    weeklyFields.classList.toggle('d-none', !isWeekly);
+    specificFields.classList.toggle('d-none', isWeekly);
+  }
+
+  document.getElementById('schedWeekly').addEventListener('change', toggleFields);
+  document.getElementById('schedSpecific').addEventListener('change', toggleFields);
+  toggleFields();
+})();
+</script>
+{% endblock %}
