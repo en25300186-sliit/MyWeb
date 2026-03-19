@@ -18,10 +18,17 @@ class APIKeySettingsForm(forms.ModelForm):
         fields = ['provider', 'preferred_model']
         widgets = {
             'provider': forms.Select(attrs={'class': 'form-select', 'id': 'id_provider'}),
-            'preferred_model': forms.TextInput(attrs={'class': 'form-control', 'id': 'id_preferred_model'}),
+            'preferred_model': forms.TextInput(attrs={
+                'class': 'form-control',
+                'id': 'id_preferred_model',
+                'list': 'model-suggestions',
+            }),
         }
         help_texts = {
-            'preferred_model': 'Examples: openai/gpt-4o-mini (GitHub), gpt-4o (OpenAI), llama3-8b-8192 (Groq)',
+            'preferred_model': (
+                'Select a suggested model from the list or type a custom model name. '
+                'GitHub: openai/gpt-4o-mini · OpenAI: gpt-4o-mini · Groq: llama3-8b-8192'
+            ),
         }
 
     def __init__(self, *args, **kwargs):
@@ -34,3 +41,20 @@ class APIKeySettingsForm(forms.ModelForm):
             hint = cfg.get('default_model', '')
             choices.append((value, f'{label}  (default model: {hint})'))
         self.fields['provider'].choices = choices
+
+    def clean(self):
+        cleaned_data = super().clean()
+        provider = cleaned_data.get('provider')
+        model = cleaned_data.get('preferred_model', '').strip()
+
+        if provider and model:
+            cfg = PROVIDER_CONFIG.get(provider, {})
+            known_models = cfg.get('models', [])
+            if known_models and model not in known_models:
+                self.add_error(
+                    'preferred_model',
+                    f'"{model}" is not a recognised model for {cfg.get("label", provider)}. '
+                    f'Please choose one of the known models: {", ".join(known_models)}.',
+                )
+
+        return cleaned_data
