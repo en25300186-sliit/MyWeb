@@ -166,16 +166,53 @@ def run_agent(
     # -----------------------------------------------------------------------
     tools_invoked: list[str] = []
 
+    # Some servers (e.g. vLLM without --enable-auto-tool-choice) reject requests
+    # that include tools because they cannot handle the default "auto" tool-choice
+    # mode.  We detect this on the first failure and fall back to a plain call.
+    tools_supported: bool = True
+
     for _iteration in range(MAX_ITERATIONS):
         try:
-            response = client.chat.completions.create(
-                model=model,
-                messages=messages,
-                tools=tool_schemas,
-            )
+            call_kwargs: dict[str, Any] = {'model': model, 'messages': messages}
+            if tools_supported and tool_schemas:
+                call_kwargs['tools'] = tool_schemas
+            response = client.chat.completions.create(**call_kwargs)
         except Exception as exc:  # noqa: BLE001
-            logger.exception('API call failed for user %s', user.pk)
-            return {'reply': '', 'tool_calls_made': tools_invoked, 'error': str(exc)}
+            exc_str = str(exc)
+            # Detect servers that don't support tool-choice / function calling.
+            # Only trigger the fallback for BadRequestError with a matching message.
+            from openai import BadRequestError
+            if (
+                tools_supported
+                and isinstance(exc, BadRequestError)
+                and (
+                    'tool choice' in exc_str.lower()
+                    or 'tool-call-parser' in exc_str.lower()
+                    or 'enable-auto-tool-choice' in exc_str.lower()
+                )
+            ):
+                logger.warning(
+                    'Server does not support tool calling for user %s; '
+                    'retrying without tools. Error: %s',
+                    user.pk,
+                    exc_str,
+                )
+                tools_supported = False
+                # Retry immediately without tools
+                try:
+                    response = client.chat.completions.create(
+                        model=model, messages=messages
+                    )
+                except Exception as retry_exc:  # noqa: BLE001
+                    logger.exception('API call failed for user %s', user.pk)
+                    return {
+                        'reply': '',
+                        'tool_calls_made': tools_invoked,
+                        'error': str(retry_exc),
+                    }
+            else:
+                logger.exception('API call failed for user %s', user.pk)
+                return {'reply': '', 'tool_calls_made': tools_invoked, 'error': exc_str}
 
         choice = response.choices[0]
         assistant_message = choice.message
