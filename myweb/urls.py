@@ -5,4 +5,5 @@ urlpatterns = [
     path('admin/', admin.site.urls),
     path('accounts/', include('accounts.urls')),
     path('', include('tools.urls')),
+    path('', include('ai_agent.urls')),
 ]

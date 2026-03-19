@@ -1,0 +1,132 @@
+{% extends "base.html" %}
+{% block title %}AI Settings – EngiHub{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-7 col-md-9">
+
+    <div class="d-flex align-items-center mb-4">
+      <i class="bi bi-key-fill fs-3 text-primary me-3"></i>
+      <div>
+        <h2 class="mb-0">AI Assistant Settings</h2>
+        <p class="text-muted mb-0">Configure your AI provider and API key (BYOK)</p>
+      </div>
+    </div>
+
+    {% if has_key %}
+    <div class="alert alert-success d-flex align-items-center" role="alert">
+      <i class="bi bi-shield-lock-fill me-2"></i>
+      <span>An API key is already stored and encrypted. You can replace it below.</span>
+    </div>
+    {% else %}
+    <div class="alert alert-info d-flex align-items-center" role="alert">
+      <i class="bi bi-info-circle-fill me-2"></i>
+      <div>
+        <strong>Bring Your Own Key (BYOK)</strong> – EngiHub does not provide API keys.
+        You must supply your own key from the chosen provider.
+        <strong>GitHub Models</strong> (the default) accepts a
+        <a href="https://github.com/settings/tokens" target="_blank" rel="noopener">GitHub Personal Access Token</a>
+        with no special scopes needed.
+      </div>
+    </div>
+    {% endif %}
+
+    <div class="card shadow-sm">
+      <div class="card-body p-4">
+        <form method="post" novalidate>
+          {% csrf_token %}
+
+          <!-- Provider -->
+          <div class="mb-3">
+            <label class="form-label fw-semibold" for="id_provider">Provider</label>
+            {{ form.provider }}
+            {% if form.provider.errors %}
+              <div class="text-danger small mt-1">{{ form.provider.errors }}</div>
+            {% endif %}
+          </div>
+
+          <!-- Preferred Model -->
+          <div class="mb-3">
+            <label class="form-label fw-semibold" for="id_preferred_model">Preferred Model</label>
+            {{ form.preferred_model }}
+            <div class="form-text">{{ form.fields.preferred_model.help_text }}</div>
+            {% if form.preferred_model.errors %}
+              <div class="text-danger small mt-1">{{ form.preferred_model.errors }}</div>
+            {% endif %}
+          </div>
+
+          <!-- API Key -->
+          <div class="mb-4">
+            <label class="form-label fw-semibold" for="{{ form.api_key.id_for_label }}">
+              {{ form.api_key.label }}
+            </label>
+            {{ form.api_key }}
+            <div class="form-text">{{ form.api_key.help_text }}</div>
+            {% if form.api_key.errors %}
+              <div class="text-danger small mt-1">{{ form.api_key.errors }}</div>
+            {% endif %}
+          </div>
+
+          <div class="d-flex gap-2">
+            <button type="submit" class="btn btn-primary">
+              <i class="bi bi-floppy-fill me-1"></i>Save &amp; Encrypt Key
+            </button>
+            {% if has_key %}
+            <a href="{% url 'ai_chat' %}" class="btn btn-outline-secondary">
+              <i class="bi bi-chat-dots me-1"></i>Back to Chat
+            </a>
+            {% endif %}
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Provider reference card -->
+    <div class="card mt-4 bg-light border-0">
+      <div class="card-body">
+        <h6 class="card-title"><i class="bi bi-book me-1"></i>Provider Reference</h6>
+        <table class="table table-sm mb-0">
+          <thead><tr><th>Provider</th><th>Base URL</th><th>Key Type</th><th>Example Model</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><span class="badge bg-dark">GitHub Models</span></td>
+              <td><code class="small">models.inference.ai.azure.com</code></td>
+              <td>GitHub PAT</td>
+              <td><code class="small">openai/gpt-4o-mini</code></td>
+            </tr>
+            <tr>
+              <td><span class="badge bg-success">OpenAI</span></td>
+              <td><code class="small">api.openai.com/v1</code></td>
+              <td>OpenAI API Key</td>
+              <td><code class="small">gpt-4o-mini</code></td>
+            </tr>
+            <tr>
+              <td><span class="badge bg-warning text-dark">Groq</span></td>
+              <td><code class="small">api.groq.com/openai/v1</code></td>
+              <td>Groq API Key</td>
+              <td><code class="small">llama3-8b-8192</code></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Auto-fill the preferred model field when the provider changes
+const providerDefaults = {{ provider_defaults|safe }};
+const providerSelect = document.getElementById('id_provider');
+const modelInput = document.getElementById('id_preferred_model');
+
+providerSelect.addEventListener('change', function () {
+  const key = this.value;
+  if (providerDefaults[key]) {
+    modelInput.value = providerDefaults[key];
+  }
+});
+</script>
+{% endblock %}
