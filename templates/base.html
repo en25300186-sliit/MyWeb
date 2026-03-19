@@ -30,6 +30,8 @@
             <i class="bi bi-tools me-1"></i>Tools
           </a>
           <ul class="dropdown-menu">
+            <li><a class="dropdown-item" href="{% url 'timetable' %}"><i class="bi bi-calendar-week me-2"></i>Timetable</a></li>
+            <li><hr class="dropdown-divider"></li>
             <li><a class="dropdown-item" href="{% url 'unit_converter' %}"><i class="bi bi-arrow-left-right me-2"></i>Unit Converter</a></li>
             <li><a class="dropdown-item" href="{% url 'gpa_calculator' %}"><i class="bi bi-mortarboard me-2"></i>GPA Calculator</a></li>
             <li><a class="dropdown-item" href="{% url 'resistor_calculator' %}"><i class="bi bi-cpu me-2"></i>Resistor Calculator</a></li>
@@ -41,7 +43,13 @@
           </ul>
         </li>
       </ul>
-      <ul class="navbar-nav ms-auto">
+      <ul class="navbar-nav ms-auto align-items-center">
+        <!-- Live server clock -->
+        <li class="nav-item me-3 d-none d-lg-flex align-items-center" id="serverClockWrapper">
+          <span class="live-dot" id="connectionDot" title="Connected to server"></span>
+          <span class="text-white-50 small me-1" id="serverDate"></span>
+          <span class="text-white fw-semibold" id="serverTime" style="font-family:monospace;font-size:1rem;letter-spacing:1px;">--:--:--</span>
+        </li>
         <li class="nav-item dropdown">
           <a class="nav-link dropdown-toggle" href="#" data-bs-toggle="dropdown">
             <i class="bi bi-person-circle me-1"></i>{{ user.username }}

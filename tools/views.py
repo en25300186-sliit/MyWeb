@@ -2,10 +2,49 @@ from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 from django.db.models import Sum
+from django.http import JsonResponse
+from django.utils import timezone
 from decimal import Decimal
-from .models import StudyNote, TodoItem, Expense
-from .forms import StudyNoteForm, TodoForm, ExpenseForm
+from .models import StudyNote, TodoItem, Expense, TimetableEntry
+from .forms import StudyNoteForm, TodoForm, ExpenseForm, TimetableEntryForm
 import json
+import datetime
+
+
+def server_time(request):
+    """JSON endpoint returning current server time (no login required for live clock)."""
+    now = timezone.localtime(timezone.now())
+    return JsonResponse({
+        'time': now.strftime('%H:%M:%S'),
+        'date': now.strftime('%A, %d %B %Y'),
+        'iso': now.isoformat(),
+    })
+
+
+@login_required
+def api_today_timetable(request):
+    """JSON API returning today's timetable entries for notifications."""
+    today = timezone.localdate()
+    weekday = today.weekday()  # 0=Monday ... 6=Sunday
+
+    weekly = TimetableEntry.objects.filter(user=request.user, is_weekly=True, day_of_week=weekday)
+    specific = TimetableEntry.objects.filter(user=request.user, is_weekly=False, specific_date=today)
+    entries = list(weekly) + list(specific)
+    entries.sort(key=lambda e: e.start_time)
+
+    data = [
+        {
+            'id': e.id,
+            'title': e.title,
+            'event_type': e.event_type,
+            'location': e.location,
+            'start_time': e.start_time.strftime('%H:%M'),
+            'end_time': e.end_time.strftime('%H:%M'),
+            'color': e.color,
+        }
+        for e in entries
+    ]
+    return JsonResponse({'entries': data})
 
 
 @login_required
@@ -13,10 +52,19 @@ def dashboard(request):
     notes_count = StudyNote.objects.filter(user=request.user).count()
     todos_count = TodoItem.objects.filter(user=request.user, completed=False).count()
     total_expenses = Expense.objects.filter(user=request.user).aggregate(total=Sum('amount'))['total'] or Decimal('0')
+
+    today = timezone.localdate()
+    weekday = today.weekday()
+    weekly_today = TimetableEntry.objects.filter(user=request.user, is_weekly=True, day_of_week=weekday)
+    specific_today = TimetableEntry.objects.filter(user=request.user, is_weekly=False, specific_date=today)
+    today_entries = sorted(list(weekly_today) + list(specific_today), key=lambda e: e.start_time)
+
     context = {
         'notes_count': notes_count,
         'todos_count': todos_count,
         'total_expenses': total_expenses,
+        'today_entries': today_entries,
+        'today_name': today.strftime('%A, %d %B %Y'),
     }
     return render(request, 'tools/dashboard.html', context)
 
@@ -221,3 +269,68 @@ def expense_delete(request, pk):
     expense.delete()
     messages.success(request, 'Expense deleted.')
     return redirect('budget_tracker')
+
+
+@login_required
+def timetable(request):
+    DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+    today = timezone.localdate()
+    weekday = today.weekday()
+
+    # Build weekly grid
+    weekly_entries = TimetableEntry.objects.filter(user=request.user, is_weekly=True)
+    weekly_by_day = {i: [] for i in range(7)}
+    for entry in weekly_entries:
+        if entry.day_of_week is not None:
+            weekly_by_day[entry.day_of_week].append(entry)
+
+    # Upcoming specific-date events (today and future)
+    upcoming = TimetableEntry.objects.filter(
+        user=request.user, is_weekly=False, specific_date__gte=today
+    ).order_by('specific_date', 'start_time')
+
+    context = {
+        'days': list(enumerate(DAYS)),
+        'weekly_by_day': weekly_by_day,
+        'upcoming': upcoming,
+        'today_weekday': weekday,
+    }
+    return render(request, 'tools/timetable.html', context)
+
+
+@login_required
+def timetable_create(request):
+    if request.method == 'POST':
+        form = TimetableEntryForm(request.POST)
+        if form.is_valid():
+            entry = form.save(commit=False)
+            entry.user = request.user
+            entry.save()
+            messages.success(request, 'Timetable entry added!')
+            return redirect('timetable')
+    else:
+        form = TimetableEntryForm()
+    return render(request, 'tools/timetable_form.html', {'form': form, 'action': 'Add'})
+
+
+@login_required
+def timetable_edit(request, pk):
+    entry = get_object_or_404(TimetableEntry, pk=pk, user=request.user)
+    if request.method == 'POST':
+        form = TimetableEntryForm(request.POST, instance=entry)
+        if form.is_valid():
+            form.save()
+            messages.success(request, 'Entry updated!')
+            return redirect('timetable')
+    else:
+        form = TimetableEntryForm(instance=entry)
+    return render(request, 'tools/timetable_form.html', {'form': form, 'action': 'Edit'})
+
+
+@login_required
+def timetable_delete(request, pk):
+    entry = get_object_or_404(TimetableEntry, pk=pk, user=request.user)
+    if request.method == 'POST':
+        entry.delete()
+        messages.success(request, 'Entry deleted.')
+    return redirect('timetable')

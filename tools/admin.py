@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import StudyNote, TodoItem, Expense
+from .models import StudyNote, TodoItem, Expense, TimetableEntry
 
 
 @admin.register(StudyNote)
@@ -21,3 +21,10 @@ class ExpenseAdmin(admin.ModelAdmin):
     list_display = ['title', 'amount', 'category', 'date', 'user']
     list_filter = ['category', 'user', 'date']
     search_fields = ['title']
+
+
+@admin.register(TimetableEntry)
+class TimetableEntryAdmin(admin.ModelAdmin):
+    list_display = ['title', 'event_type', 'user', 'is_weekly', 'day_of_week', 'specific_date', 'start_time', 'end_time']
+    list_filter = ['event_type', 'is_weekly', 'user']
+    search_fields = ['title', 'location']

@@ -91,3 +91,49 @@ body {
   text-decoration: underline;
   text-underline-offset: 3px;
 }
+
+/* Live connection dot */
+.live-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #9e9e9e;
+  display: inline-block;
+  margin-right: 6px;
+  flex-shrink: 0;
+  transition: background 0.4s;
+}
+.live-dot.connected {
+  background: #4caf50;
+  box-shadow: 0 0 0 3px rgba(76, 175, 80, 0.3);
+  animation: pulse-dot 2s infinite;
+}
+.live-dot.disconnected {
+  background: #f44336;
+}
+@keyframes pulse-dot {
+  0%, 100% { box-shadow: 0 0 0 3px rgba(76,175,80,0.3); }
+  50% { box-shadow: 0 0 0 6px rgba(76,175,80,0.1); }
+}
+
+/* Timetable grid */
+.timetable-grid th, .timetable-grid td {
+  min-width: 120px;
+}
+.timetable-chip {
+  transition: box-shadow 0.15s;
+}
+.timetable-chip:hover {
+  box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+}
+.timetable-color-bar {
+  flex-shrink: 0;
+}
+
+/* Timetable entry statuses on dashboard */
+.timetable-entry.entry-inprogress {
+  background: rgba(76, 175, 80, 0.06);
+}
+.timetable-entry.entry-done {
+  opacity: 0.6;
+}

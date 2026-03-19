@@ -18,4 +18,12 @@ urlpatterns = [
     path('tools/todo/<int:pk>/delete/', views.todo_delete, name='todo_delete'),
     path('tools/budget/', views.budget_tracker, name='budget_tracker'),
     path('tools/budget/<int:pk>/delete/', views.expense_delete, name='expense_delete'),
+    # Timetable
+    path('tools/timetable/', views.timetable, name='timetable'),
+    path('tools/timetable/add/', views.timetable_create, name='timetable_create'),
+    path('tools/timetable/<int:pk>/edit/', views.timetable_edit, name='timetable_edit'),
+    path('tools/timetable/<int:pk>/delete/', views.timetable_delete, name='timetable_delete'),
+    # API
+    path('api/server-time/', views.server_time, name='server_time'),
+    path('api/today-timetable/', views.api_today_timetable, name='api_today_timetable'),
 ]
