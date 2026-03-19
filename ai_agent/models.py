@@ -8,10 +8,11 @@ from django.db import models
 # ---------------------------------------------------------------------------
 PROVIDER_CONFIG = {
     'github': {
-        'base_url': 'https://models.inference.ai.azure.com',
-        'default_model': 'openai/gpt-4o-mini',
+        'base_url': 'https://models.github.ai/inference',
+        'default_model': 'meta/Llama-3.2-90B-Vision-Instruct',
         'label': 'GitHub Models (Default)',
         'models': [
+            'meta/Llama-3.2-90B-Vision-Instruct',
             'openai/gpt-4o-mini',
             'openai/gpt-4o',
             'meta/llama-3.1-8b-instruct',
@@ -59,7 +60,7 @@ class UserAPIKey(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='api_key_config')
     provider = models.CharField(max_length=20, choices=PROVIDER_CHOICES, default='github')
     encrypted_api_key = models.TextField(help_text='Fernet-encrypted API key')
-    preferred_model = models.CharField(max_length=100, default='openai/gpt-4o-mini')
+    preferred_model = models.CharField(max_length=100, default='meta/Llama-3.2-90B-Vision-Instruct')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

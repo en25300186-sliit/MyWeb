@@ -27,7 +27,7 @@ class APIKeySettingsForm(forms.ModelForm):
         help_texts = {
             'preferred_model': (
                 'Select a suggested model from the list or type a custom model name. '
-                'GitHub: openai/gpt-4o-mini · OpenAI: gpt-4o-mini · Groq: llama3-8b-8192'
+                'GitHub: meta/Llama-3.2-90B-Vision-Instruct · OpenAI: gpt-4o-mini · Groq: llama3-8b-8192'
             ),
         }
 
