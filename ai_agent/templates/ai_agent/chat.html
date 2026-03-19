@@ -1,0 +1,307 @@
+{% extends "base.html" %}
+{% block title %}AI Assistant – EngiHub{% endblock %}
+
+{% block content %}
+<div class="row">
+  <!-- Sidebar -->
+  <div class="col-lg-3 col-md-4 mb-3">
+    <div class="card shadow-sm h-100">
+      <div class="card-body d-flex flex-column">
+        <h5 class="card-title mb-3"><i class="bi bi-robot me-2 text-primary"></i>AI Assistant</h5>
+
+        {% if not has_api_key %}
+        <div class="alert alert-warning py-2 small">
+          <i class="bi bi-exclamation-triangle-fill me-1"></i>
+          No API key configured.
+          <a href="{% url 'ai_settings' %}" class="alert-link">Add yours here.</a>
+        </div>
+        {% else %}
+        <div class="alert alert-success py-2 small mb-3">
+          <i class="bi bi-shield-check me-1"></i>API key active.
+          <a href="{% url 'ai_settings' %}" class="alert-link">Change</a>
+        </div>
+        {% endif %}
+
+        <p class="text-muted small">
+          Ask me anything about your notes, tasks, expenses, or timetable.
+          You can also <strong>upload images or PDFs</strong> for analysis.
+        </p>
+
+        <hr>
+
+        <div class="d-grid gap-2 mt-auto">
+          <a href="{% url 'ai_chat_new' %}" class="btn btn-outline-primary btn-sm">
+            <i class="bi bi-plus-circle me-1"></i>New Conversation
+          </a>
+          <a href="{% url 'ai_settings' %}" class="btn btn-outline-secondary btn-sm">
+            <i class="bi bi-key me-1"></i>API Settings
+          </a>
+        </div>
+
+        <hr>
+
+        <p class="text-muted small mb-1 fw-semibold">Available Tools</p>
+        <ul class="list-unstyled small text-muted">
+          <li><i class="bi bi-journal-text me-1 text-primary"></i>Study Notes (read/write)</li>
+          <li><i class="bi bi-check2-square me-1 text-primary"></i>To-Do List (read/write)</li>
+          <li><i class="bi bi-wallet2 me-1 text-primary"></i>Expenses (read/write)</li>
+          <li><i class="bi bi-calendar-week me-1 text-primary"></i>Timetable (read/write)</li>
+          <li><i class="bi bi-bar-chart me-1 text-primary"></i>Dashboard Summary</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- Chat area -->
+  <div class="col-lg-9 col-md-8">
+    <div class="card shadow-sm d-flex flex-column" style="min-height:70vh;">
+
+      <!-- Messages -->
+      <div class="card-body flex-grow-1 overflow-auto p-3" id="chatMessages" style="max-height:55vh;">
+        {% if not history %}
+        <div class="text-center text-muted py-5" id="emptyState">
+          <i class="bi bi-chat-dots fs-1 d-block mb-2 text-primary opacity-50"></i>
+          <p class="mb-0">Start a conversation. Ask me to show your tasks, add notes, or analyse an uploaded file.</p>
+        </div>
+        {% else %}
+          {% for msg in history %}
+            {% if msg.role == 'user' %}
+            <div class="d-flex justify-content-end mb-3">
+              <div class="bg-primary text-white rounded-3 px-3 py-2 chat-bubble-user" style="max-width:75%;">
+                {{ msg.content|linebreaksbr }}
+              </div>
+            </div>
+            {% elif msg.role == 'assistant' %}
+            <div class="d-flex justify-content-start mb-3">
+              <div class="bg-light border rounded-3 px-3 py-2 chat-bubble-ai" style="max-width:75%;">
+                <span class="badge bg-primary bg-opacity-10 text-primary small mb-1 d-block">
+                  <i class="bi bi-robot me-1"></i>EngiHub AI
+                </span>
+                <div class="ai-content">{{ msg.content|linebreaksbr }}</div>
+              </div>
+            </div>
+            {% elif msg.role == 'tool' %}
+            <div class="d-flex justify-content-center mb-2">
+              <span class="badge bg-secondary bg-opacity-25 text-secondary small">
+                <i class="bi bi-gear-fill me-1"></i>{{ msg.content }}
+              </span>
+            </div>
+            {% endif %}
+          {% endfor %}
+        {% endif %}
+      </div>
+
+      <!-- Typing indicator -->
+      <div id="typingIndicator" class="px-3 pb-1 d-none">
+        <span class="badge bg-light text-secondary border">
+          <span class="spinner-grow spinner-grow-sm me-1" role="status"></span>
+          EngiHub AI is thinking…
+        </span>
+      </div>
+
+      <!-- File preview area -->
+      <div id="filePreview" class="px-3 d-none">
+        <div class="d-flex flex-wrap gap-2" id="fileChips"></div>
+      </div>
+
+      <!-- Input bar -->
+      <div class="card-footer bg-white border-top p-3">
+        {% if has_api_key %}
+        <form id="chatForm" enctype="multipart/form-data">
+          {% csrf_token %}
+          <input type="hidden" name="session_id" value="{{ conversation.session_id }}">
+          <div class="input-group">
+            <label for="fileInput" class="btn btn-outline-secondary" title="Attach image or PDF">
+              <i class="bi bi-paperclip"></i>
+              <input type="file" id="fileInput" name="files[]" multiple accept="image/*,.pdf" class="d-none">
+            </label>
+            <textarea
+              id="messageInput"
+              name="message"
+              class="form-control"
+              rows="1"
+              placeholder="Ask anything about your data… (Shift+Enter for newline)"
+              style="resize:none;"
+              required
+            ></textarea>
+            <button type="submit" class="btn btn-primary" id="sendBtn">
+              <i class="bi bi-send-fill"></i>
+            </button>
+          </div>
+        </form>
+        {% else %}
+        <div class="text-center text-muted">
+          <a href="{% url 'ai_settings' %}" class="btn btn-primary">
+            <i class="bi bi-key me-1"></i>Set up API Key to start chatting
+          </a>
+        </div>
+        {% endif %}
+      </div>
+
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const SEND_URL = "{% url 'ai_chat_send' %}";
+const chatMessages = document.getElementById('chatMessages');
+const typingIndicator = document.getElementById('typingIndicator');
+const filePreview = document.getElementById('filePreview');
+const fileChips = document.getElementById('fileChips');
+const fileInput = document.getElementById('fileInput');
+const messageInput = document.getElementById('messageInput');
+const chatForm = document.getElementById('chatForm');
+let selectedFiles = [];
+
+// Auto-scroll to bottom
+function scrollToBottom() {
+  chatMessages.scrollTop = chatMessages.scrollHeight;
+}
+scrollToBottom();
+
+// Auto-resize textarea
+if (messageInput) {
+  messageInput.addEventListener('input', function () {
+    this.style.height = 'auto';
+    this.style.height = Math.min(this.scrollHeight, 160) + 'px';
+  });
+
+  // Submit on Enter (not Shift+Enter)
+  messageInput.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      chatForm.dispatchEvent(new Event('submit', {cancelable: true, bubbles: true}));
+    }
+  });
+}
+
+// File attachment handling
+if (fileInput) {
+  fileInput.addEventListener('change', function () {
+    selectedFiles = Array.from(this.files);
+    renderFileChips();
+  });
+}
+
+function renderFileChips() {
+  if (!selectedFiles.length) {
+    filePreview.classList.add('d-none');
+    fileChips.innerHTML = '';
+    return;
+  }
+  filePreview.classList.remove('d-none');
+  fileChips.innerHTML = selectedFiles.map((f, i) =>
+    `<span class="badge bg-secondary d-flex align-items-center gap-1">
+      <i class="bi bi-paperclip"></i>${escapeHtml(f.name)}
+      <button type="button" class="btn-close btn-close-white btn-sm ms-1" style="font-size:.6rem;" onclick="removeFile(${i})"></button>
+    </span>`
+  ).join('');
+}
+
+function removeFile(idx) {
+  selectedFiles.splice(idx, 1);
+  // Rebuild a new FileList-like object for the input (use DataTransfer)
+  const dt = new DataTransfer();
+  selectedFiles.forEach(f => dt.items.add(f));
+  fileInput.files = dt.files;
+  renderFileChips();
+}
+
+function escapeHtml(text) {
+  return text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function appendMessage(role, content, toolName) {
+  // Remove empty state placeholder
+  const empty = document.getElementById('emptyState');
+  if (empty) empty.remove();
+
+  const wrapper = document.createElement('div');
+  if (role === 'user') {
+    wrapper.className = 'd-flex justify-content-end mb-3';
+    wrapper.innerHTML = `<div class="bg-primary text-white rounded-3 px-3 py-2 chat-bubble-user" style="max-width:75%;">${nl2br(escapeHtml(content))}</div>`;
+  } else if (role === 'assistant') {
+    wrapper.className = 'd-flex justify-content-start mb-3';
+    wrapper.innerHTML = `<div class="bg-light border rounded-3 px-3 py-2 chat-bubble-ai" style="max-width:75%;">
+      <span class="badge bg-primary bg-opacity-10 text-primary small mb-1 d-block"><i class="bi bi-robot me-1"></i>EngiHub AI</span>
+      <div class="ai-content">${nl2br(escapeHtml(content))}</div>
+    </div>`;
+  } else if (role === 'tool') {
+    wrapper.className = 'd-flex justify-content-center mb-2';
+    wrapper.innerHTML = `<span class="badge bg-secondary bg-opacity-25 text-secondary small"><i class="bi bi-gear-fill me-1"></i>${escapeHtml(content)}</span>`;
+  }
+  chatMessages.appendChild(wrapper);
+  scrollToBottom();
+}
+
+function nl2br(text) {
+  return text.replace(/\n/g, '<br>');
+}
+
+// Form submit handler
+if (chatForm) {
+  chatForm.addEventListener('submit', async function (e) {
+    e.preventDefault();
+
+    const text = messageInput.value.trim();
+    if (!text && !selectedFiles.length) return;
+
+    appendMessage('user', text || '(file upload)');
+
+    // Show typing indicator
+    typingIndicator.classList.remove('d-none');
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+
+    // Build FormData
+    const fd = new FormData(chatForm);
+    // Replace files[] with the current selectedFiles list
+    fd.delete('files[]');
+    selectedFiles.forEach(f => fd.append('files[]', f));
+
+    // Reset input
+    messageInput.value = '';
+    messageInput.style.height = 'auto';
+    selectedFiles = [];
+    renderFileChips();
+
+    try {
+      const resp = await fetch(SEND_URL, {
+        method: 'POST',
+        headers: {'X-CSRFToken': fd.get('csrfmiddlewaretoken')},
+        body: fd,
+      });
+      const data = await resp.json();
+
+      typingIndicator.classList.add('d-none');
+
+      if (data.error && !data.reply) {
+        appendMessage('assistant', '⚠️ ' + data.error);
+        return;
+      }
+      if (data.tool_calls_made && data.tool_calls_made.length) {
+        data.tool_calls_made.forEach(name => {
+          appendMessage('tool', 'Tool executed: ' + name, name);
+        });
+      }
+      appendMessage('assistant', data.reply || '(no response)');
+
+      // Update hidden session_id field in case it changed
+      const sessionInput = chatForm.querySelector('[name="session_id"]');
+      if (sessionInput && data.session_id) sessionInput.value = data.session_id;
+
+    } catch (err) {
+      typingIndicator.classList.add('d-none');
+      appendMessage('assistant', '⚠️ Network error: ' + err.message);
+    }
+  });
+}
+</script>
+
+<style>
+  .chat-bubble-user { word-break: break-word; }
+  .chat-bubble-ai { word-break: break-word; }
+  #chatMessages { scroll-behavior: smooth; }
+</style>
+{% endblock %}
