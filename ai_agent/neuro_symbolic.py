@@ -509,13 +509,23 @@ def evaluate_sentence(text: str, base: UniBase | None = None) -> dict:
     """
     Parse *text* and evaluate every operator / assignment that has logic.
 
+    Pronouns are resolved against the parsing context before evaluation.
     Returns a plain dict suitable for JSON serialisation.
     """
     result = parse_sentence(text, base)
+    context = result.context
+
+    def _resolve_pronoun_or_get_word(item) -> str:
+        """Resolve a UniPronoun to its referent word, or return the item's word."""
+        if item.type == UniTypes.UNIPRONOUN and item.logic is not None:
+            resolved = item.logic(context)
+            if resolved is not None:
+                return str(resolved.word) if hasattr(resolved, "word") else str(resolved)
+        return str(item.word)
 
     evaluations: list[dict] = []
     for conn in result.connections:
-        args = [item.word for item in conn.items]
+        args = [_resolve_pronoun_or_get_word(item) for item in conn.items]
 
         if conn.uniitem is not None and conn.uniitem.logic is not None:
             val = conn.uniitem.logic(args)
@@ -550,7 +560,7 @@ def evaluate_sentence(text: str, base: UniBase | None = None) -> dict:
             for c in result.classified
         ],
         "connections": [
-            {"operator": c.word, "items": [i.word for i in c.items]}
+            {"operator": c.word, "items": [_resolve_pronoun_or_get_word(i) for i in c.items]}
             for c in result.connections
         ],
         "evaluations": evaluations,
@@ -591,3 +601,66 @@ def query_word(word: str, base: UniBase | None = None) -> list[dict]:
             entry["args_end"] = ArgsEnding(item.args_end).name
         results.append(entry)
     return results
+
+
+# ---------------------------------------------------------------------------
+# Session-scoped neuro-symbolic engine
+# ---------------------------------------------------------------------------
+
+class NeuroSymbolicSession:
+    """
+    A per-session wrapper that combines the global built-in knowledge base
+    with user-defined custom facts.
+
+    Facts added to a session are serialisable (plain dicts) so they can be
+    stored in Django's session framework and the engine reconstructed on
+    each request.
+    """
+
+    def __init__(self) -> None:
+        # Start with a shallow copy of the global base's items mapping
+        self._base = UniBase()
+        self._base.items = dict(_GLOBAL_BASE.items)
+        self._facts: list[dict] = []
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
+
+    def parse(self, text: str) -> dict:
+        """Parse and evaluate *text* using the session knowledge base."""
+        return evaluate_sentence(text, self._base)
+
+    def query(self, word: str) -> dict:
+        """Query the session knowledge base for *word*."""
+        matches = query_word(word, self._base)
+        return {"word": word, "matches": matches, "count": len(matches)}
+
+    def add_fact(self, subject: str, relation: str, value: str) -> dict:
+        """
+        Add a simple subject–relation–value triple to the session knowledge
+        base.  The subject and value tokens are registered as
+        :class:`UniObject` entries so the parser can recognise them.
+        """
+        for token in (subject.lower(), value.lower()):
+            if token not in self._base.items:
+                self._base.add_item(UniObject(word=token))
+        fact: dict = {"subject": subject, "relation": relation, "value": value}
+        self._facts.append(fact)
+        return {"added": True, **fact}
+
+    def load_facts(self, facts: list[dict]) -> None:
+        """Replay a serialised list of facts (e.g. from the Django session)."""
+        for fact in facts:
+            self.add_fact(fact["subject"], fact["relation"], fact["value"])
+
+    @property
+    def facts(self) -> list[dict]:
+        """Return a copy of the accumulated custom facts."""
+        return list(self._facts)
+
+    @property
+    def custom_words(self) -> list[str]:
+        """Return words present in the session base but not in the global base."""
+        global_keys = set(_GLOBAL_BASE.items.keys())
+        return [k for k in self._base.items if k not in global_keys]
