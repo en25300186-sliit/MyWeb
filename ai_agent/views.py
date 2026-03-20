@@ -176,3 +176,91 @@ def chat_send(request):
         'error': result.get('error'),
         'session_id': str(conversation.session_id),
     })
+
+
+# ---------------------------------------------------------------------------
+# Neuro-Symbolic AI interface
+# ---------------------------------------------------------------------------
+
+_NS_SESSION_KEY = 'neuro_symbolic_facts'
+
+
+def _rebuild_session(request):
+    """
+    Reconstruct a :class:`NeuroSymbolicSession` from the stored fact list in
+    the Django session.  Returns the session engine and the raw facts list.
+    """
+    from .neuro_symbolic import NeuroSymbolicSession
+    facts = request.session.get(_NS_SESSION_KEY, [])
+    engine = NeuroSymbolicSession()
+    engine.load_facts(facts)
+    return engine, facts
+
+
+@login_required
+def neuro_symbolic_view(request):
+    """Render the Neuro-Symbolic AI interactive interface."""
+    _engine, facts = _rebuild_session(request)
+    return render(request, 'ai_agent/neuro_symbolic.html', {'facts': facts})
+
+
+@login_required
+@require_POST
+def neuro_symbolic_process(request):
+    """
+    AJAX endpoint for the Neuro-Symbolic AI interface.
+
+    Expected request body: JSON with key ``action`` plus action-specific keys.
+
+    Actions
+    -------
+    parse    – ``{"action": "parse", "sentence": "<text>"}``
+    query    – ``{"action": "query", "word": "<word>"}``
+    add_fact – ``{"action": "add_fact", "subject": "...", "relation": "...", "value": "..."}``
+    clear    – ``{"action": "clear"}``
+
+    Returns JSON ``{"ok": true, "result": {...}}`` or ``{"error": "..."}``
+    """
+    try:
+        body = json.loads(request.body)
+    except (json.JSONDecodeError, ValueError):
+        return JsonResponse({'error': 'Invalid JSON body.'}, status=400)
+
+    action = body.get('action', '')
+    engine, facts = _rebuild_session(request)
+
+    if action == 'parse':
+        sentence = body.get('sentence', '').strip()
+        if not sentence:
+            return JsonResponse({'error': 'No sentence provided.'}, status=400)
+        result = engine.parse(sentence)
+        return JsonResponse({'ok': True, 'result': result})
+
+    elif action == 'query':
+        word = body.get('word', '').strip()
+        if not word:
+            return JsonResponse({'error': 'No word provided.'}, status=400)
+        result = engine.query(word)
+        return JsonResponse({'ok': True, 'result': result})
+
+    elif action == 'add_fact':
+        subject = body.get('subject', '').strip()
+        relation = body.get('relation', '').strip()
+        value = body.get('value', '').strip()
+        if not subject or not relation or not value:
+            return JsonResponse(
+                {'error': 'subject, relation, and value are all required.'}, status=400
+            )
+        engine.add_fact(subject, relation, value)
+        facts.append({'subject': subject, 'relation': relation, 'value': value})
+        request.session[_NS_SESSION_KEY] = facts
+        request.session.modified = True
+        return JsonResponse({'ok': True, 'facts': facts})
+
+    elif action == 'clear':
+        request.session[_NS_SESSION_KEY] = []
+        request.session.modified = True
+        return JsonResponse({'ok': True, 'facts': []})
+
+    else:
+        return JsonResponse({'error': f'Unknown action: {action!r}'}, status=400)

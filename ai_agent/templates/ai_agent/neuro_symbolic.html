@@ -1,0 +1,601 @@
+{% extends "base.html" %}
+{% block title %}Neuro-Symbolic AI – EngiHub{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <div>
+    <h1 class="fw-bold mb-0"><i class="bi bi-diagram-3 me-2 text-primary"></i>Neuro-Symbolic AI</h1>
+    <p class="text-muted mb-0">Parse natural language into symbolic structures, query the knowledge base, and add custom facts.</p>
+  </div>
+  <a href="{% url 'dashboard' %}" class="btn btn-outline-secondary btn-sm">
+    <i class="bi bi-arrow-left me-1"></i>Dashboard
+  </a>
+</div>
+
+<!-- Tabs -->
+<ul class="nav nav-tabs mb-4" id="nsTabs" role="tablist">
+  <li class="nav-item" role="presentation">
+    <button class="nav-link active" id="parse-tab" data-bs-toggle="tab" data-bs-target="#parse-panel"
+            type="button" role="tab">
+      <i class="bi bi-text-paragraph me-1"></i>Parse Sentence
+    </button>
+  </li>
+  <li class="nav-item" role="presentation">
+    <button class="nav-link" id="query-tab" data-bs-toggle="tab" data-bs-target="#query-panel"
+            type="button" role="tab">
+      <i class="bi bi-search me-1"></i>Query Word
+    </button>
+  </li>
+  <li class="nav-item" role="presentation">
+    <button class="nav-link" id="kb-tab" data-bs-toggle="tab" data-bs-target="#kb-panel"
+            type="button" role="tab">
+      <i class="bi bi-database me-1"></i>Knowledge Base
+      {% if facts %}<span class="badge bg-primary ms-1">{{ facts|length }}</span>{% endif %}
+    </button>
+  </li>
+</ul>
+
+<div class="tab-content">
+
+  <!-- ===== PARSE TAB ===== -->
+  <div class="tab-pane fade show active" id="parse-panel" role="tabpanel">
+    <div class="card border-0 shadow-sm mb-4">
+      <div class="card-body">
+        <label class="form-label fw-semibold">Enter a sentence to parse</label>
+        <div class="input-group">
+          <input type="text" id="parseInput" class="form-control"
+                 placeholder="e.g. &quot;apple is fruit&quot; or &quot;5 + 3&quot; or &quot;if x and y then z&quot;"
+                 autocomplete="off">
+          <button class="btn btn-primary" id="parseBtn">
+            <i class="bi bi-play-fill me-1"></i>Parse
+          </button>
+        </div>
+        <div class="mt-2 d-flex flex-wrap gap-1" id="parseExamples">
+          <span class="text-muted small me-1">Try:</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Spinner -->
+    <div id="parseSpinner" class="text-center py-4 d-none">
+      <div class="spinner-border text-primary" role="status"></div>
+      <p class="mt-2 text-muted">Parsing…</p>
+    </div>
+
+    <!-- Results -->
+    <div id="parseResults" class="d-none">
+
+      <!-- Tokens -->
+      <div class="card border-0 shadow-sm mb-3">
+        <div class="card-header bg-white border-bottom fw-semibold">
+          <i class="bi bi-list-ul me-2 text-primary"></i>Tokens
+        </div>
+        <div class="card-body">
+          <div id="tokenDisplay" class="d-flex flex-wrap gap-2"></div>
+        </div>
+      </div>
+
+      <!-- Connections -->
+      <div class="card border-0 shadow-sm mb-3">
+        <div class="card-header bg-white border-bottom fw-semibold">
+          <i class="bi bi-diagram-2 me-2 text-primary"></i>Connection Graph
+        </div>
+        <div class="card-body p-0">
+          <div class="table-responsive">
+            <table class="table table-sm table-hover mb-0" id="connectionsTable">
+              <thead class="table-light">
+                <tr>
+                  <th>Operator / Assignment</th>
+                  <th>Arguments</th>
+                </tr>
+              </thead>
+              <tbody id="connectionsBody"></tbody>
+            </table>
+          </div>
+          <p id="noConnections" class="text-muted text-center py-3 mb-0 d-none">No connections found in this sentence.</p>
+        </div>
+      </div>
+
+      <!-- Evaluations -->
+      <div class="card border-0 shadow-sm mb-3">
+        <div class="card-header bg-white border-bottom fw-semibold">
+          <i class="bi bi-calculator me-2 text-primary"></i>Evaluated Results
+        </div>
+        <div class="card-body p-0">
+          <div class="table-responsive">
+            <table class="table table-sm table-hover mb-0" id="evaluationsTable">
+              <thead class="table-light">
+                <tr>
+                  <th>Operator</th>
+                  <th>Type</th>
+                  <th>Args</th>
+                  <th>Result</th>
+                </tr>
+              </thead>
+              <tbody id="evaluationsBody"></tbody>
+            </table>
+          </div>
+          <p id="noEvaluations" class="text-muted text-center py-3 mb-0 d-none">No evaluatable operators or assignments found.</p>
+        </div>
+      </div>
+
+      <!-- Raw JSON toggle -->
+      <div class="mb-3">
+        <button class="btn btn-outline-secondary btn-sm" type="button" data-bs-toggle="collapse"
+                data-bs-target="#rawJson">
+          <i class="bi bi-code-slash me-1"></i>Show raw JSON
+        </button>
+        <div class="collapse mt-2" id="rawJson">
+          <pre class="bg-light border rounded p-3 small" id="rawJsonContent" style="max-height:300px;overflow:auto;"></pre>
+        </div>
+      </div>
+    </div>
+  </div><!-- /parse-panel -->
+
+  <!-- ===== QUERY TAB ===== -->
+  <div class="tab-pane fade" id="query-panel" role="tabpanel">
+    <div class="card border-0 shadow-sm mb-4">
+      <div class="card-body">
+        <label class="form-label fw-semibold">Look up a word in the knowledge base</label>
+        <div class="input-group">
+          <input type="text" id="queryInput" class="form-control"
+                 placeholder="e.g. and, is, it, +, not …" autocomplete="off">
+          <button class="btn btn-primary" id="queryBtn">
+            <i class="bi bi-search me-1"></i>Query
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div id="querySpinner" class="text-center py-4 d-none">
+      <div class="spinner-border text-primary" role="status"></div>
+    </div>
+
+    <div id="queryResults" class="d-none">
+      <div class="card border-0 shadow-sm">
+        <div class="card-header bg-white border-bottom fw-semibold">
+          <i class="bi bi-info-circle me-2 text-primary"></i>Knowledge Base Entries for "<span id="queriedWord"></span>"
+        </div>
+        <div class="card-body p-0">
+          <div class="table-responsive">
+            <table class="table table-sm mb-0">
+              <thead class="table-light">
+                <tr>
+                  <th>Word</th>
+                  <th>Type</th>
+                  <th>Args Count</th>
+                  <th>Args Ending</th>
+                </tr>
+              </thead>
+              <tbody id="queryBody"></tbody>
+            </table>
+          </div>
+          <p id="queryEmpty" class="text-muted text-center py-3 mb-0 d-none">
+            Word not found in knowledge base. You can add it as a custom fact in the <strong>Knowledge Base</strong> tab.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Built-in quick-reference -->
+    <div class="card border-0 shadow-sm mt-4">
+      <div class="card-header bg-white border-bottom fw-semibold">
+        <i class="bi bi-book me-2 text-primary"></i>Built-in Knowledge Reference
+      </div>
+      <div class="card-body">
+        <div class="row g-3">
+          <div class="col-md-4">
+            <h6 class="fw-semibold text-primary">Operators</h6>
+            <div class="d-flex flex-wrap gap-1">
+              <span class="badge bg-warning text-dark query-chip" style="cursor:pointer;">and</span>
+              <span class="badge bg-warning text-dark query-chip" style="cursor:pointer;">or</span>
+              <span class="badge bg-warning text-dark query-chip" style="cursor:pointer;">not</span>
+              <span class="badge bg-warning text-dark query-chip" style="cursor:pointer;">if</span>
+              <span class="badge bg-warning text-dark query-chip" style="cursor:pointer;">then</span>
+              <span class="badge bg-warning text-dark query-chip" style="cursor:pointer;">equals</span>
+              <span class="badge bg-warning text-dark query-chip" style="cursor:pointer;">==</span>
+              <span class="badge bg-warning text-dark query-chip" style="cursor:pointer;">!=</span>
+              <span class="badge bg-warning text-dark query-chip" style="cursor:pointer;">&gt;</span>
+              <span class="badge bg-warning text-dark query-chip" style="cursor:pointer;">&lt;</span>
+              <span class="badge bg-warning text-dark query-chip" style="cursor:pointer;">+</span>
+              <span class="badge bg-warning text-dark query-chip" style="cursor:pointer;">-</span>
+              <span class="badge bg-warning text-dark query-chip" style="cursor:pointer;">*</span>
+              <span class="badge bg-warning text-dark query-chip" style="cursor:pointer;">/</span>
+              <span class="badge bg-warning text-dark query-chip" style="cursor:pointer;">add</span>
+              <span class="badge bg-warning text-dark query-chip" style="cursor:pointer;">subtract</span>
+              <span class="badge bg-warning text-dark query-chip" style="cursor:pointer;">multiply</span>
+              <span class="badge bg-warning text-dark query-chip" style="cursor:pointer;">divide</span>
+            </div>
+          </div>
+          <div class="col-md-4">
+            <h6 class="fw-semibold text-success">Assignments</h6>
+            <div class="d-flex flex-wrap gap-1">
+              <span class="badge bg-success query-chip" style="cursor:pointer;">is</span>
+              <span class="badge bg-success query-chip" style="cursor:pointer;">are</span>
+              <span class="badge bg-success query-chip" style="cursor:pointer;">=</span>
+              <span class="badge bg-success query-chip" style="cursor:pointer;">has</span>
+              <span class="badge bg-success query-chip" style="cursor:pointer;">have</span>
+              <span class="badge bg-success query-chip" style="cursor:pointer;">contains</span>
+              <span class="badge bg-success query-chip" style="cursor:pointer;">belong</span>
+              <span class="badge bg-success query-chip" style="cursor:pointer;">belongs</span>
+            </div>
+          </div>
+          <div class="col-md-4">
+            <h6 class="fw-semibold text-info">Pronouns</h6>
+            <div class="d-flex flex-wrap gap-1">
+              <span class="badge bg-info query-chip" style="cursor:pointer;">it</span>
+              <span class="badge bg-info query-chip" style="cursor:pointer;">this</span>
+              <span class="badge bg-info query-chip" style="cursor:pointer;">that</span>
+              <span class="badge bg-info query-chip" style="cursor:pointer;">he</span>
+              <span class="badge bg-info query-chip" style="cursor:pointer;">she</span>
+              <span class="badge bg-info query-chip" style="cursor:pointer;">they</span>
+              <span class="badge bg-info query-chip" style="cursor:pointer;">we</span>
+              <span class="badge bg-info query-chip" style="cursor:pointer;">i</span>
+              <span class="badge bg-info query-chip" style="cursor:pointer;">you</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div><!-- /query-panel -->
+
+  <!-- ===== KNOWLEDGE BASE TAB ===== -->
+  <div class="tab-pane fade" id="kb-panel" role="tabpanel">
+    <div class="row g-4">
+      <!-- Add fact form -->
+      <div class="col-lg-5">
+        <div class="card border-0 shadow-sm h-100">
+          <div class="card-header bg-white border-bottom fw-semibold">
+            <i class="bi bi-plus-circle me-2 text-primary"></i>Add Custom Fact
+          </div>
+          <div class="card-body">
+            <p class="text-muted small mb-3">
+              Register a subject–relation–value triple so the parser can recognise
+              these words as objects in future sentences.
+            </p>
+            <div class="mb-3">
+              <label class="form-label small fw-semibold">Subject</label>
+              <input type="text" id="factSubject" class="form-control form-control-sm"
+                     placeholder="e.g. apple">
+            </div>
+            <div class="mb-3">
+              <label class="form-label small fw-semibold">Relation</label>
+              <input type="text" id="factRelation" class="form-control form-control-sm"
+                     placeholder="e.g. is, has, belongs-to">
+            </div>
+            <div class="mb-3">
+              <label class="form-label small fw-semibold">Value</label>
+              <input type="text" id="factValue" class="form-control form-control-sm"
+                     placeholder="e.g. fruit">
+            </div>
+            <button class="btn btn-primary w-100" id="addFactBtn">
+              <i class="bi bi-plus-lg me-1"></i>Add Fact
+            </button>
+            <div id="factError" class="alert alert-danger py-2 mt-2 small d-none"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Fact list -->
+      <div class="col-lg-7">
+        <div class="card border-0 shadow-sm">
+          <div class="card-header bg-white border-bottom d-flex justify-content-between align-items-center fw-semibold">
+            <span><i class="bi bi-list-check me-2 text-primary"></i>Session Facts</span>
+            <button class="btn btn-outline-danger btn-sm" id="clearFactsBtn">
+              <i class="bi bi-trash me-1"></i>Clear All
+            </button>
+          </div>
+          <div class="card-body p-0">
+            <div id="factsList">
+              {% if facts %}
+              <table class="table table-sm table-hover mb-0">
+                <thead class="table-light">
+                  <tr><th>Subject</th><th>Relation</th><th>Value</th></tr>
+                </thead>
+                <tbody id="factsBody">
+                  {% for fact in facts %}
+                  <tr>
+                    <td><code>{{ fact.subject }}</code></td>
+                    <td><span class="badge bg-secondary">{{ fact.relation }}</span></td>
+                    <td><code>{{ fact.value }}</code></td>
+                  </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+              {% else %}
+              <div class="text-center text-muted py-4" id="factsEmpty">
+                <i class="bi bi-database-x" style="font-size:2rem;"></i>
+                <p class="mt-2 mb-0 small">No custom facts yet. Add one using the form.</p>
+              </div>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div><!-- /kb-panel -->
+
+</div><!-- /tab-content -->
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const PROCESS_URL = "{% url 'neuro_symbolic_process' %}";
+const CSRF_TOKEN = "{{ csrf_token }}";
+
+// ── Helper ────────────────────────────────────────────────────────────────
+
+function escHtml(s) {
+  return String(s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;');
+}
+
+async function apiFetch(payload) {
+  const r = await fetch(PROCESS_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-CSRFToken': CSRF_TOKEN,
+    },
+    body: JSON.stringify(payload),
+  });
+  return r.json();
+}
+
+// ── Token type → badge colour ─────────────────────────────────────────────
+
+const TYPE_BADGE = {
+  UNIOPERATOR:   'warning text-dark',
+  UNIASSIGNMENT: 'success',
+  UNIPRONOUN:    'info',
+  UNIOBJECT:     'primary',
+  UNISYNTAX:     'secondary',
+  UNICONNECTION: 'dark',
+  UNIACTION:     'danger',
+};
+
+function typeBadge(type) {
+  const cls = TYPE_BADGE[type] || 'secondary';
+  return `<span class="badge bg-${cls}">${escHtml(type)}</span>`;
+}
+
+function resultBadge(val) {
+  if (val === null || val === undefined) return '<span class="text-muted fst-italic">null</span>';
+  if (val === true)  return '<span class="badge bg-success">true</span>';
+  if (val === false) return '<span class="badge bg-danger">false</span>';
+  if (typeof val === 'object') return `<code>${escHtml(JSON.stringify(val))}</code>`;
+  return `<code>${escHtml(String(val))}</code>`;
+}
+
+// ── PARSE ─────────────────────────────────────────────────────────────────
+
+document.getElementById('parseBtn').addEventListener('click', doParse);
+document.getElementById('parseInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter') doParse();
+});
+
+async function doParse() {
+  const sentence = document.getElementById('parseInput').value.trim();
+  if (!sentence) return;
+
+  document.getElementById('parseSpinner').classList.remove('d-none');
+  document.getElementById('parseResults').classList.add('d-none');
+
+  const data = await apiFetch({action: 'parse', sentence});
+
+  document.getElementById('parseSpinner').classList.add('d-none');
+
+  if (data.error) {
+    alert('Error: ' + data.error);
+    return;
+  }
+
+  const res = data.result;
+
+  // Tokens
+  const tokenDisplay = document.getElementById('tokenDisplay');
+  tokenDisplay.innerHTML = res.classified.map(c =>
+    `<div class="d-flex flex-column align-items-center gap-1">
+       <code class="px-2 py-1 border rounded bg-light">${escHtml(c.token)}</code>
+       ${typeBadge(c.type)}
+     </div>`
+  ).join('');
+
+  // Connections
+  const connBody = document.getElementById('connectionsBody');
+  if (res.connections.length) {
+    connBody.innerHTML = res.connections.map(c =>
+      `<tr>
+        <td><code>${escHtml(c.operator)}</code></td>
+        <td>${c.items.map(i => `<code class="me-1">${escHtml(i)}</code>`).join('')}</td>
+      </tr>`
+    ).join('');
+    document.getElementById('noConnections').classList.add('d-none');
+    document.getElementById('connectionsTable').classList.remove('d-none');
+  } else {
+    document.getElementById('connectionsTable').classList.add('d-none');
+    document.getElementById('noConnections').classList.remove('d-none');
+  }
+
+  // Evaluations
+  const evalBody = document.getElementById('evaluationsBody');
+  if (res.evaluations.length) {
+    evalBody.innerHTML = res.evaluations.map(e =>
+      `<tr>
+        <td><code>${escHtml(e.operator)}</code></td>
+        <td>${typeBadge(e.type)}</td>
+        <td>${e.args.map(a => `<code class="me-1">${escHtml(a)}</code>`).join('')}</td>
+        <td>${resultBadge(e.result)}</td>
+      </tr>`
+    ).join('');
+    document.getElementById('noEvaluations').classList.add('d-none');
+    document.getElementById('evaluationsTable').classList.remove('d-none');
+  } else {
+    document.getElementById('evaluationsTable').classList.add('d-none');
+    document.getElementById('noEvaluations').classList.remove('d-none');
+  }
+
+  // Raw JSON
+  document.getElementById('rawJsonContent').textContent = JSON.stringify(res, null, 2);
+
+  document.getElementById('parseResults').classList.remove('d-none');
+}
+
+// Quick-example chips for parse tab
+(function buildExampleChips() {
+  const examples = [
+    'apple is fruit',
+    '5 add 3',
+    'x and y',
+    'cat has fur',
+    'not true',
+    '10 > 5',
+    'if rain then wet',
+  ];
+  const container = document.getElementById('parseExamples');
+  examples.forEach(ex => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'btn btn-outline-secondary btn-sm py-0';
+    btn.style.fontSize = '.75rem';
+    btn.textContent = ex;
+    btn.addEventListener('click', () => {
+      document.getElementById('parseInput').value = ex;
+      doParse();
+    });
+    container.appendChild(btn);
+  });
+})();
+
+// ── QUERY ─────────────────────────────────────────────────────────────────
+
+document.getElementById('queryBtn').addEventListener('click', doQuery);
+document.getElementById('queryInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter') doQuery();
+});
+
+document.querySelectorAll('.query-chip').forEach(chip => {
+  chip.addEventListener('click', () => {
+    document.getElementById('queryInput').value = chip.textContent.trim();
+    document.querySelector('#query-tab').click();
+    doQuery();
+  });
+});
+
+async function doQuery() {
+  const word = document.getElementById('queryInput').value.trim();
+  if (!word) return;
+
+  document.getElementById('querySpinner').classList.remove('d-none');
+  document.getElementById('queryResults').classList.add('d-none');
+
+  const data = await apiFetch({action: 'query', word});
+
+  document.getElementById('querySpinner').classList.add('d-none');
+
+  if (data.error) { alert('Error: ' + data.error); return; }
+
+  const res = data.result;
+  document.getElementById('queriedWord').textContent = res.word;
+
+  const body = document.getElementById('queryBody');
+  if (res.matches.length) {
+    body.innerHTML = res.matches.map(m =>
+      `<tr>
+        <td><code>${escHtml(m.word)}</code></td>
+        <td>${typeBadge(m.type)}</td>
+        <td>${m.args_count !== undefined ? m.args_count : '<span class="text-muted">—</span>'}</td>
+        <td>${m.args_end !== undefined ? `<code>${escHtml(m.args_end)}</code>` : '<span class="text-muted">—</span>'}</td>
+      </tr>`
+    ).join('');
+    document.getElementById('queryEmpty').classList.add('d-none');
+    document.querySelector('#queryResults table').classList.remove('d-none');
+  } else {
+    document.querySelector('#queryResults table').classList.add('d-none');
+    document.getElementById('queryEmpty').classList.remove('d-none');
+  }
+
+  document.getElementById('queryResults').classList.remove('d-none');
+}
+
+// ── KNOWLEDGE BASE ────────────────────────────────────────────────────────
+
+document.getElementById('addFactBtn').addEventListener('click', doAddFact);
+document.getElementById('clearFactsBtn').addEventListener('click', doClearFacts);
+
+async function doAddFact() {
+  const subject  = document.getElementById('factSubject').value.trim();
+  const relation = document.getElementById('factRelation').value.trim();
+  const value    = document.getElementById('factValue').value.trim();
+  const errEl    = document.getElementById('factError');
+
+  errEl.classList.add('d-none');
+
+  if (!subject || !relation || !value) {
+    errEl.textContent = 'All three fields are required.';
+    errEl.classList.remove('d-none');
+    return;
+  }
+
+  const data = await apiFetch({action: 'add_fact', subject, relation, value});
+
+  if (data.error) {
+    errEl.textContent = data.error;
+    errEl.classList.remove('d-none');
+    return;
+  }
+
+  // Clear inputs
+  document.getElementById('factSubject').value = '';
+  document.getElementById('factRelation').value = '';
+  document.getElementById('factValue').value = '';
+
+  renderFacts(data.facts);
+}
+
+async function doClearFacts() {
+  if (!confirm('Clear all session facts?')) return;
+  const data = await apiFetch({action: 'clear'});
+  if (data.ok) renderFacts([]);
+}
+
+function renderFacts(facts) {
+  const container = document.getElementById('factsList');
+  if (!facts.length) {
+    container.innerHTML = `
+      <div class="text-center text-muted py-4" id="factsEmpty">
+        <i class="bi bi-database-x" style="font-size:2rem;"></i>
+        <p class="mt-2 mb-0 small">No custom facts yet. Add one using the form.</p>
+      </div>`;
+    return;
+  }
+  container.innerHTML = `
+    <table class="table table-sm table-hover mb-0">
+      <thead class="table-light"><tr><th>Subject</th><th>Relation</th><th>Value</th></tr></thead>
+      <tbody>${facts.map(f =>
+        `<tr>
+           <td><code>${escHtml(f.subject)}</code></td>
+           <td><span class="badge bg-secondary">${escHtml(f.relation)}</span></td>
+           <td><code>${escHtml(f.value)}</code></td>
+         </tr>`
+      ).join('')}</tbody>
+    </table>`;
+
+  // Update badge count on KB tab
+  const kbTab = document.getElementById('kb-tab');
+  let badge = kbTab.querySelector('.badge');
+  if (!badge) {
+    badge = document.createElement('span');
+    badge.className = 'badge bg-primary ms-1';
+    kbTab.appendChild(badge);
+  }
+  badge.textContent = facts.length;
+}
+</script>
+
+<style>
+  .query-chip { cursor: pointer; transition: opacity .15s; }
+  .query-chip:hover { opacity: .8; }
+</style>
+{% endblock %}
