@@ -164,8 +164,13 @@ class BrowserManager:
                         args=['--no-first-run'],
                     )
 
-                pages = self._context.pages
-                self._page = pages[0] if pages else self._context.new_page()
+                self._page = self._context.new_page()
+                for p in self._context.pages:
+                    if p != self._page and p.url == 'about:blank':
+                        try:
+                            p.close()
+                        except Exception:
+                            pass
                 self._page.goto('https://aistudio.google.com/prompts/new_chat',
                                 wait_until='domcontentloaded')
                 self._status = 'running'
@@ -396,7 +401,7 @@ class BrowserManager:
                 page.wait_for_selector(sel, timeout=3000)
                 page.click(sel)
                 page.wait_for_timeout(600)
-                opt = page.query_selector(f'[role="option"]:has-text("{tool_name}")')
+                opt = page.query_selector(f'[role="option":has-text("{tool_name}")]')
                 if opt:
                     opt.click()
                     return {'success': True, 'message': f'Tool "{tool_name}" added.'}
@@ -418,7 +423,6 @@ _AISTUDIO_MODELS = [
     'Gemini 1.5 Flash-8B',
 ]
 
-
 @login_required
 def aistudio_launcher(request):
     """Render the AI Studio control-panel page."""
@@ -429,14 +433,12 @@ def aistudio_launcher(request):
         'models': _AISTUDIO_MODELS,
     })
 
-
 @login_required
 def aistudio_launch(request):
     if request.method != 'POST':
         return JsonResponse({'error': 'POST required'}, status=405)
     result = BrowserManager.get().launch()
     return JsonResponse(result)
-
 
 @login_required
 def aistudio_stop(request):
@@ -445,12 +447,10 @@ def aistudio_stop(request):
     result = BrowserManager.get().stop()
     return JsonResponse(result)
 
-
 @login_required
 def aistudio_status(request):
     mgr = BrowserManager.get()
     return JsonResponse({'status': mgr.status, 'is_running': mgr.is_running})
-
 
 @login_required
 def aistudio_action(request):
@@ -466,21 +466,20 @@ def aistudio_action(request):
     mgr = BrowserManager.get()
 
     dispatch = {
-        'switch_model': lambda: mgr.switch_model(data.get('model', '')),
-        'set_system_instruction': lambda: mgr.set_system_instruction(data.get('instruction', '')),
-        'new_chat': lambda: mgr.new_chat(),
-        'list_chats': lambda: mgr.list_chats(),
-        'delete_chat': lambda: mgr.delete_chat(data.get('title', '')),
-        'send_message': lambda: mgr.send_message(data.get('message', '')),
-        'navigate': lambda: mgr.navigate_to(data.get('url', 'https://aistudio.google.com/prompts/new_chat')),
-        'add_tool': lambda: mgr.add_tool(data.get('tool_name', '')),
+        'switch_model': lambda: mgr.switch_model(data.get('model', '')), 
+        'set_system_instruction': lambda: mgr.set_system_instruction(data.get('instruction', '')), 
+        'new_chat': lambda: mgr.new_chat(), 
+        'list_chats': lambda: mgr.list_chats(), 
+        'delete_chat': lambda: mgr.delete_chat(data.get('title', '')), 
+        'send_message': lambda: mgr.send_message(data.get('message', '')), 
+        'navigate': lambda: mgr.navigate_to(data.get('url', 'https://aistudio.google.com/prompts/new_chat')), 
+        'add_tool': lambda: mgr.add_tool(data.get('tool_name', '')), 
     }
 
     handler = dispatch.get(action)
     if handler is None:
         return JsonResponse({'success': False, 'error': f'Unknown action: {action}'})
     return JsonResponse(handler())
-
 
 def server_time(request):
     """JSON endpoint returning current server time (no login required for live clock)."""
@@ -490,7 +489,6 @@ def server_time(request):
         'date': now.strftime('%A, %d %B %Y'),
         'iso': now.isoformat(),
     })
-
 
 @login_required
 def api_today_timetable(request):
@@ -517,7 +515,6 @@ def api_today_timetable(request):
     ]
     return JsonResponse({'entries': data})
 
-
 @login_required
 def dashboard(request):
     notes_count = StudyNote.objects.filter(user=request.user).count()
@@ -538,7 +535,6 @@ def dashboard(request):
         'today_name': today.strftime('%A, %d %B %Y'),
     }
     return render(request, 'tools/dashboard.html', context)
-
 
 @login_required
 def unit_converter(request):
@@ -614,27 +610,22 @@ def unit_converter(request):
 
     return render(request, 'tools/unit_converter.html', {'result': result})
 
-
 @login_required
 def gpa_calculator(request):
     return render(request, 'tools/gpa_calculator.html')
-
 
 @login_required
 def resistor_calculator(request):
     return render(request, 'tools/resistor_calculator.html')
 
-
 @login_required
 def study_timer(request):
     return render(request, 'tools/study_timer.html')
-
 
 @login_required
 def study_notes(request):
     notes = StudyNote.objects.filter(user=request.user)
     return render(request, 'tools/study_notes.html', {'notes': notes})
-
 
 @login_required
 def note_create(request):
@@ -650,7 +641,6 @@ def note_create(request):
         form = StudyNoteForm()
     return render(request, 'tools/note_form.html', {'form': form, 'action': 'Create'})
 
-
 @login_required
 def note_edit(request, pk):
     note = get_object_or_404(StudyNote, pk=pk, user=request.user)
@@ -664,7 +654,6 @@ def note_edit(request, pk):
         form = StudyNoteForm(instance=note)
     return render(request, 'tools/note_form.html', {'form': form, 'action': 'Edit'})
 
-
 @login_required
 def note_delete(request, pk):
     note = get_object_or_404(StudyNote, pk=pk, user=request.user)
@@ -672,7 +661,6 @@ def note_delete(request, pk):
         note.delete()
         messages.success(request, 'Note deleted.')
     return redirect('study_notes')
-
 
 @login_required
 def todo_list(request):
@@ -688,7 +676,6 @@ def todo_list(request):
             return redirect('todo_list')
     return render(request, 'tools/todo_list.html', {'todos': todos, 'form': form})
 
-
 @login_required
 def todo_toggle(request, pk):
     todo = get_object_or_404(TodoItem, pk=pk, user=request.user)
@@ -696,14 +683,12 @@ def todo_toggle(request, pk):
     todo.save()
     return redirect('todo_list')
 
-
 @login_required
 def todo_delete(request, pk):
     todo = get_object_or_404(TodoItem, pk=pk, user=request.user)
     todo.delete()
     messages.success(request, 'Task deleted.')
     return redirect('todo_list')
-
 
 @login_required
 def budget_tracker(request):
@@ -733,14 +718,12 @@ def budget_tracker(request):
     }
     return render(request, 'tools/budget_tracker.html', context)
 
-
 @login_required
 def expense_delete(request, pk):
     expense = get_object_or_404(Expense, pk=pk, user=request.user)
     expense.delete()
     messages.success(request, 'Expense deleted.')
     return redirect('budget_tracker')
-
 
 @login_required
 def timetable(request):
@@ -768,7 +751,6 @@ def timetable(request):
     }
     return render(request, 'tools/timetable.html', context)
 
-
 @login_required
 def timetable_create(request):
     if request.method == 'POST':
@@ -783,7 +765,6 @@ def timetable_create(request):
         form = TimetableEntryForm()
     return render(request, 'tools/timetable_form.html', {'form': form, 'action': 'Add'})
 
-
 @login_required
 def timetable_edit(request, pk):
     entry = get_object_or_404(TimetableEntry, pk=pk, user=request.user)
@@ -796,7 +777,6 @@ def timetable_edit(request, pk):
     else:
         form = TimetableEntryForm(instance=entry)
     return render(request, 'tools/timetable_form.html', {'form': form, 'action': 'Edit'})
-
 
 @login_required
 def timetable_delete(request, pk):
