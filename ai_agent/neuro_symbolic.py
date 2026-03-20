@@ -343,39 +343,73 @@ def _build_builtin_base() -> None:
 
     # -- Operators -----------------------------------------------------------
     operators = [
-        UniOperator(word="and",      args_count=2, args_end=ArgsEnding.FIXED,           logic=_logic_and),
-        UniOperator(word="or",       args_count=2, args_end=ArgsEnding.FIXED,           logic=_logic_or),
-        UniOperator(word="not",      args_count=1, args_end=ArgsEnding.FIXED,           logic=_logic_not),
-        UniOperator(word="if",       args_count=2, args_end=ArgsEnding.BY_END_OPERATOR, logic=_logic_if),
-        UniOperator(word="then",     args_count=0, args_end=ArgsEnding.FIXED,           logic=None),
-        UniOperator(word="equals",   args_count=2, args_end=ArgsEnding.FIXED,           logic=_logic_equals),
-        UniOperator(word="==",       args_count=2, args_end=ArgsEnding.FIXED,           logic=_logic_equals),
-        UniOperator(word="!=",       args_count=2, args_end=ArgsEnding.FIXED,           logic=_logic_not_equals),
-        UniOperator(word=">",        args_count=2, args_end=ArgsEnding.FIXED,           logic=_logic_greater),
-        UniOperator(word="<",        args_count=2, args_end=ArgsEnding.FIXED,           logic=_logic_less),
-        UniOperator(word=">=",       args_count=2, args_end=ArgsEnding.FIXED,           logic=_logic_greater_eq),
-        UniOperator(word="<=",       args_count=2, args_end=ArgsEnding.FIXED,           logic=_logic_less_eq),
-        UniOperator(word="+",        args_count=2, args_end=ArgsEnding.FIXED,           logic=_logic_add),
-        UniOperator(word="-",        args_count=2, args_end=ArgsEnding.FIXED,           logic=_logic_subtract),
-        UniOperator(word="*",        args_count=2, args_end=ArgsEnding.FIXED,           logic=_logic_multiply),
-        UniOperator(word="/",        args_count=2, args_end=ArgsEnding.FIXED,           logic=_logic_divide),
-        UniOperator(word="add",      args_count=2, args_end=ArgsEnding.FIXED,           logic=_logic_add),
-        UniOperator(word="subtract", args_count=2, args_end=ArgsEnding.FIXED,           logic=_logic_subtract),
-        UniOperator(word="multiply", args_count=2, args_end=ArgsEnding.FIXED,           logic=_logic_multiply),
-        UniOperator(word="divide",   args_count=2, args_end=ArgsEnding.FIXED,           logic=_logic_divide),
+        # logical
+        UniOperator(word="and",       args_count=2, args_end=ArgsEnding.FIXED,           logic=_logic_and),
+        UniOperator(word="or",        args_count=2, args_end=ArgsEnding.FIXED,           logic=_logic_or),
+        UniOperator(word="not",       args_count=1, args_end=ArgsEnding.FIXED,           logic=_logic_not),
+        UniOperator(word="if",        args_count=2, args_end=ArgsEnding.BY_END_OPERATOR, logic=_logic_if),
+        UniOperator(word="then",      args_count=0, args_end=ArgsEnding.FIXED,           logic=None),
+        UniOperator(word="but",       args_count=2, args_end=ArgsEnding.FIXED,           logic=None),
+        UniOperator(word="also",      args_count=2, args_end=ArgsEnding.FIXED,           logic=_logic_and),
+        UniOperator(word="because",   args_count=2, args_end=ArgsEnding.BY_END_OPERATOR, logic=_logic_if),
+        UniOperator(word="therefore", args_count=0, args_end=ArgsEnding.FIXED,           logic=None),
+        UniOperator(word="unless",    args_count=2, args_end=ArgsEnding.BY_END_OPERATOR, logic=None),
+        UniOperator(word="while",     args_count=2, args_end=ArgsEnding.BY_END_OPERATOR, logic=None),
+        UniOperator(word="after",     args_count=2, args_end=ArgsEnding.BY_END_OPERATOR, logic=None),
+        UniOperator(word="before",    args_count=2, args_end=ArgsEnding.BY_END_OPERATOR, logic=None),
+        # comparison
+        UniOperator(word="equals",    args_count=2, args_end=ArgsEnding.FIXED,           logic=_logic_equals),
+        UniOperator(word="==",        args_count=2, args_end=ArgsEnding.FIXED,           logic=_logic_equals),
+        UniOperator(word="!=",        args_count=2, args_end=ArgsEnding.FIXED,           logic=_logic_not_equals),
+        UniOperator(word=">",         args_count=2, args_end=ArgsEnding.FIXED,           logic=_logic_greater),
+        UniOperator(word="<",         args_count=2, args_end=ArgsEnding.FIXED,           logic=_logic_less),
+        UniOperator(word=">=",        args_count=2, args_end=ArgsEnding.FIXED,           logic=_logic_greater_eq),
+        UniOperator(word="<=",        args_count=2, args_end=ArgsEnding.FIXED,           logic=_logic_less_eq),
+        # arithmetic
+        UniOperator(word="+",         args_count=2, args_end=ArgsEnding.FIXED,           logic=_logic_add),
+        UniOperator(word="-",         args_count=2, args_end=ArgsEnding.FIXED,           logic=_logic_subtract),
+        UniOperator(word="*",         args_count=2, args_end=ArgsEnding.FIXED,           logic=_logic_multiply),
+        UniOperator(word="/",         args_count=2, args_end=ArgsEnding.FIXED,           logic=_logic_divide),
+        UniOperator(word="add",       args_count=2, args_end=ArgsEnding.FIXED,           logic=_logic_add),
+        UniOperator(word="subtract",  args_count=2, args_end=ArgsEnding.FIXED,           logic=_logic_subtract),
+        UniOperator(word="multiply",  args_count=2, args_end=ArgsEnding.FIXED,           logic=_logic_multiply),
+        UniOperator(word="divide",    args_count=2, args_end=ArgsEnding.FIXED,           logic=_logic_divide),
     ]
 
     # -- Assignments ---------------------------------------------------------
     assignments = [
+        # be-verbs
         UniAssignment(word="is",       logic=_logic_assign,    question_logic=_logic_question_lookup),
         UniAssignment(word="are",      logic=_logic_assign,    question_logic=_logic_question_lookup),
         UniAssignment(word="am",       logic=_logic_assign,    question_logic=_logic_question_lookup),
+        UniAssignment(word="was",      logic=_logic_assign,    question_logic=_logic_question_lookup),
+        UniAssignment(word="were",     logic=_logic_assign,    question_logic=_logic_question_lookup),
+        # symbolic equality
         UniAssignment(word="=",        logic=_logic_assign),
+        # have-verbs
         UniAssignment(word="has",      logic=_logic_has,       question_logic=_logic_question_lookup),
         UniAssignment(word="have",     logic=_logic_has,       question_logic=_logic_question_lookup),
+        UniAssignment(word="had",      logic=_logic_has,       question_logic=_logic_question_lookup),
+        # possessive marker ('s)
+        UniAssignment(word="'s",       logic=_logic_assign,    question_logic=_logic_question_lookup),
+        # containment / membership
         UniAssignment(word="contains", logic=_logic_contains),
+        UniAssignment(word="contain",  logic=_logic_contains),
         UniAssignment(word="belong",   logic=_logic_belongs),
         UniAssignment(word="belongs",  logic=_logic_belongs),
+        # common relation verbs
+        UniAssignment(word="like",     logic=_logic_assign,    question_logic=_logic_question_lookup),
+        UniAssignment(word="likes",    logic=_logic_assign,    question_logic=_logic_question_lookup),
+        UniAssignment(word="love",     logic=_logic_assign,    question_logic=_logic_question_lookup),
+        UniAssignment(word="loves",    logic=_logic_assign,    question_logic=_logic_question_lookup),
+        UniAssignment(word="want",     logic=_logic_assign,    question_logic=_logic_question_lookup),
+        UniAssignment(word="wants",    logic=_logic_assign,    question_logic=_logic_question_lookup),
+        UniAssignment(word="need",     logic=_logic_assign,    question_logic=_logic_question_lookup),
+        UniAssignment(word="needs",    logic=_logic_assign,    question_logic=_logic_question_lookup),
+        UniAssignment(word="live",     logic=_logic_assign,    question_logic=_logic_question_lookup),
+        UniAssignment(word="lives",    logic=_logic_assign,    question_logic=_logic_question_lookup),
+        UniAssignment(word="own",      logic=_logic_assign,    question_logic=_logic_question_lookup),
+        UniAssignment(word="owns",     logic=_logic_assign,    question_logic=_logic_question_lookup),
     ]
 
     # -- Pronouns (personal + possessive) -----------------------------------
@@ -413,12 +447,38 @@ def _build_builtin_base() -> None:
 
     # -- Syntax markers ------------------------------------------------------
     syntax_items = [
+        # punctuation
         UniSyntax(word="("),
         UniSyntax(word=")"),
         UniSyntax(word=","),
         UniSyntax(word="."),
         UniSyntax(word="?"),
         UniSyntax(word="!"),
+        # articles
+        UniSyntax(word="the"),
+        UniSyntax(word="a"),
+        UniSyntax(word="an"),
+        # prepositions
+        UniSyntax(word="of"),
+        UniSyntax(word="in"),
+        UniSyntax(word="on"),
+        UniSyntax(word="at"),
+        UniSyntax(word="to"),
+        UniSyntax(word="for"),
+        UniSyntax(word="with"),
+        UniSyntax(word="by"),
+        UniSyntax(word="from"),
+        UniSyntax(word="about"),
+        UniSyntax(word="as"),
+        UniSyntax(word="into"),
+        UniSyntax(word="onto"),
+        UniSyntax(word="upon"),
+        UniSyntax(word="between"),
+        UniSyntax(word="among"),
+        UniSyntax(word="through"),
+        UniSyntax(word="during"),
+        UniSyntax(word="without"),
+        UniSyntax(word="within"),
     ]
 
     for item in operators + assignments + pronouns + questions + syntax_items:
@@ -630,8 +690,29 @@ def evaluate_sentence(text: str, base: UniBase | None = None) -> dict:
 # Words that are skipped when extracting subject/value tokens from a sentence.
 _SKIP_WORDS: frozenset = frozenset({"the", "a", "an"})
 
+# Verb equivalence groups used by _rel_match.
+# Be-verbs describe identity/description; have-verbs describe possession.
+# These two groups are intentionally kept SEPARATE so that facts stored with
+# "has" are never confused with facts stored with "is".
+_BE_VERBS: frozenset = frozenset({"is", "are", "am", "was", "were"})
+_HAVE_VERBS: frozenset = frozenset({"has", "have", "had"})
+
 # Assignment relation words (verbs that link subject to value).
-_ASSIGNMENT_WORDS: frozenset = frozenset({"is", "are", "am", "=", "has", "have"})
+_ASSIGNMENT_WORDS: frozenset = frozenset({
+    # be-verbs (identity / description)
+    *_BE_VERBS,
+    # have-verbs (possession)
+    *_HAVE_VERBS,
+    # symbolic equality
+    "=",
+    # possessive marker
+    "'s",
+    # common relation verbs
+    "like", "likes", "love", "loves",
+    "want", "wants", "need", "needs",
+    "live", "lives",
+    "own", "owns",
+})
 
 # WH-question words recognised by the Q&A engine.
 _QUESTION_WORDS: frozenset = frozenset({"what", "where", "when", "who", "whom", "why", "how", "which"})
@@ -679,6 +760,11 @@ def _extract_fact_from_tokens(tokens: list[str]) -> dict | None:
 
     Returns a dict ``{possessive, subject, relation, value}`` where
     ``possessive`` may be ``None``, or ``None`` if no fact pattern is found.
+
+    Also handles possessive ``'s`` constructs: a token ending with ``'s``
+    (e.g. ``"car's"``) is split into owner + attribute so that
+    "my car's color is red" yields
+    ``{possessive:"my", subject:"car", attribute:"color", relation:"is", value:"red"}``.
     """
     for i, tok in enumerate(tokens):
         if tok not in _ASSIGNMENT_WORDS:
@@ -689,6 +775,22 @@ def _extract_fact_from_tokens(tokens: list[str]) -> dict | None:
             continue
         possessive = left[0] if left[0] in _POSSESSIVE_WORDS else None
         subject_parts = left[1:] if possessive else left
+
+        # Detect X's Y pattern inside subject_parts
+        for j, part in enumerate(subject_parts):
+            if part.endswith("'s"):
+                owner = part[:-2]  # strip the "'s"
+                attribute_parts = subject_parts[j + 1:]
+                if owner and attribute_parts:
+                    attribute = " ".join(attribute_parts)
+                    return {
+                        "possessive": possessive,
+                        "subject": owner,
+                        "attribute": attribute,
+                        "relation": tok,
+                        "value": " ".join(right),
+                    }
+
         subject = " ".join(subject_parts)
         value = " ".join(right)
         if subject:
@@ -701,12 +803,57 @@ def _extract_fact_from_tokens(tokens: list[str]) -> dict | None:
     return None
 
 
+def _find_related_facts(subject: str, possessive: str | None,
+                        facts: list[dict]) -> list[str]:
+    """
+    Return human-readable strings for every stored fact whose *subject*
+    matches *subject* (case-insensitive) and whose possessive matches
+    *possessive*.
+
+    The first-/second-person possessive is flipped so the AI answer reads
+    naturally (e.g. user said "my" → AI says "your").
+    """
+    subject_lower = subject.lower()
+    poss_lower = (possessive or "").lower()
+    resp_poss = _POSSESSIVE_FLIP.get(poss_lower) if poss_lower else None
+
+    related: list[str] = []
+    for fact in facts:
+        if fact.get("subject", "").lower() != subject_lower:
+            continue
+        if (fact.get("possessive") or "").lower() != poss_lower:
+            continue
+
+        relation = fact.get("relation", "")
+        value = fact.get("value", "")
+        attribute = fact.get("attribute")
+
+        if resp_poss:
+            subj_phrase = f"{resp_poss} {subject}"
+        else:
+            subj_phrase = subject
+
+        if attribute:
+            related.append(f"{subj_phrase}'s {attribute} {relation} {value}")
+        else:
+            related.append(f"{subj_phrase} {relation} {value}")
+
+    return related
+
+
 def _try_answer_question(tokens: list[str], facts: list[dict]) -> str | None:
     """
     Try to answer a question sentence (given as *tokens*) using *facts*.
 
     Returns a natural-language answer string, or ``None`` if no matching
     fact is found.
+
+    Handles:
+    - WH-word differentiation (what vs who vs where vs when vs …).
+    - Possessive ``'s`` in the question subject ("what is my car's color?").
+    - Related-facts fallback: when no direct answer exists, returns all
+      facts known about the subject prefixed with "I don't know … but I
+      know that …".
     """
     # Locate the WH-word
     q_word: str | None = None
@@ -738,42 +885,95 @@ def _try_answer_question(tokens: list[str], facts: list[dict]) -> str | None:
     if not subject_tokens:
         return None
 
-    # Detect possessive at the start of subject tokens
+    # Detect possessive determiner at the start of subject tokens
     possessive: str | None = None
     if subject_tokens[0] in _POSSESSIVE_WORDS:
         possessive = subject_tokens[0]
         subject_tokens = subject_tokens[1:]
 
+    # Detect X's Y in question (e.g. "what is my car's color?")
+    question_attribute: str | None = None
+    for j, part in enumerate(subject_tokens):
+        if part.endswith("'s"):
+            owner = part[:-2]
+            attr_parts = subject_tokens[j + 1:]
+            if owner and attr_parts:
+                question_attribute = " ".join(attr_parts)
+                subject_tokens = [owner]
+                break
+
     subject = " ".join(subject_tokens)
     if not subject:
         return None
 
-    # Search facts for a matching entry
-    for fact in facts:
-        fact_subject = fact.get("subject", "").lower()
-        fact_relation = fact.get("relation", "").lower()
-        fact_possessive = (fact.get("possessive") or "").lower()
-        fact_value = fact.get("value", "")
+    # -- Helpers ----------------------------------------------------------
 
-        # Normalise relation: treat is/are/am as equivalent
-        def _rel_match(r1: str, r2: str) -> bool:
-            equiv = {"is", "are", "am"}
-            if r1 == r2:
-                return True
-            return r1 in equiv and r2 in equiv
+    def _rel_match(r1: str, r2: str) -> bool:
+        """True when r1 and r2 belong to the same equivalence class."""
+        if r1 == r2:
+            return True
+        if r1 in _BE_VERBS and r2 in _BE_VERBS:
+            return True
+        if r1 in _HAVE_VERBS and r2 in _HAVE_VERBS:
+            return True
+        return False
+
+    # WH-word phrasing for "I don't know" responses
+    _wh_clause = {
+        "what": "what",
+        "who":  "who",
+        "whom": "whom",
+        "where": "where",
+        "when":  "when",
+        "why":   "why",
+        "how":   "how",
+        "which": "which",
+    }
+
+    resp_poss = _POSSESSIVE_FLIP.get(possessive.lower(), possessive) if possessive else None
+
+    def _subject_phrase(poss: str | None, subj: str) -> str:
+        return f"{poss} {subj}" if poss else subj
+
+    subj_phrase = _subject_phrase(resp_poss, subject)
+
+    # -- Direct lookup (with optional attribute) --------------------------
+    for fact in facts:
+        fact_subject   = fact.get("subject", "").lower()
+        fact_relation  = fact.get("relation", "").lower()
+        fact_possessive = (fact.get("possessive") or "").lower()
+        fact_value     = fact.get("value", "")
+        fact_attribute = fact.get("attribute", "")
 
         if fact_subject != subject.lower():
-            continue
-        if not _rel_match(fact_relation, a_word):
             continue
         if fact_possessive != (possessive.lower() if possessive else ""):
             continue
 
-        # Found a matching fact – construct the answer
-        answer_relation = fact_relation
-        if possessive and (answer_possessive := _POSSESSIVE_FLIP.get(possessive)):
-            return f"{answer_possessive} {subject} {answer_relation} {fact_value}"
-        return f"{subject} {answer_relation} {fact_value}"
+        if question_attribute is not None:
+            # Question asks about a specific attribute (X's Y)
+            if fact_attribute.lower() != question_attribute.lower():
+                continue
+            if not _rel_match(fact_relation, a_word):
+                continue
+            if question_attribute:
+                return f"{subj_phrase}'s {fact_attribute} {fact_relation} {fact_value}"
+            return f"{subj_phrase} {fact_relation} {fact_value}"
+        else:
+            # Question asks about the subject directly, no attribute filter
+            if fact_attribute:
+                # Skip attribute-type facts in a direct query
+                continue
+            if not _rel_match(fact_relation, a_word):
+                continue
+            return f"{subj_phrase} {fact_relation} {fact_value}"
+
+    # -- Related-facts fallback -------------------------------------------
+    related = _find_related_facts(subject, possessive, facts)
+    wh_clause = _wh_clause.get(q_word, q_word)
+    if related:
+        related_str = " and ".join(related)
+        return f"I don't know {wh_clause} {subj_phrase} {a_word}, but I know that {related_str}"
 
     return None
 
@@ -810,7 +1010,23 @@ def process_input(text: str, facts: list[dict] | None = None,
         tokens = _tokenize(sentence_text)
         if is_question:
             answer = _try_answer_question(tokens, facts)
-            answers.append(answer if answer is not None else "I don't know.")
+            if answer is None:
+                # Build a WH-appropriate "I don't know" message
+                q_word = next((t for t in tokens if t in _QUESTION_WORDS), None)
+                wh_map = {
+                    "what": "what that is",
+                    "who":  "who that is",
+                    "whom": "whom that refers to",
+                    "where": "where that is",
+                    "when":  "when that is",
+                    "why":   "why",
+                    "how":   "how",
+                    "which": "which one",
+                }
+                fallback = f"I don't know {wh_map.get(q_word, '')}".strip() + "."
+                answers.append(fallback)
+            else:
+                answers.append(answer)
         else:
             fact = _extract_fact_from_tokens(tokens)
             if fact is not None:
@@ -901,24 +1117,37 @@ class NeuroSymbolicSession:
         return {"word": word, "matches": matches, "count": len(matches)}
 
     def add_fact(self, subject: str, relation: str, value: str,
-                 possessive: str | None = None) -> dict:
+                 possessive: str | None = None,
+                 attribute: str | None = None) -> dict:
         """
         Add a subject–relation–value triple to the session knowledge base.
 
         The optional *possessive* parameter (e.g. ``"my"``) allows storing
         possessive facts such as "my name is geemeth".
+
+        The optional *attribute* parameter supports possessive-construct facts
+        extracted from sentences like "my car's color is red", where
+        ``subject="car"``, ``attribute="color"``, ``relation="is"``,
+        ``value="red"``.
+
         The subject and value tokens are registered as :class:`UniObject`
         entries so the parser can recognise them.
         """
         for token in (subject.lower(), value.lower()):
             if token not in self._base.items:
                 self._base.add_item(UniObject(word=token))
+        if attribute:
+            attr_lower = attribute.lower()
+            if attr_lower not in self._base.items:
+                self._base.add_item(UniObject(word=attr_lower))
         fact: dict = {
             "subject": subject,
             "relation": relation,
             "value": value,
             "possessive": possessive or "",
         }
+        if attribute:
+            fact["attribute"] = attribute
         self._facts.append(fact)
         return {"added": True, **fact}
 
@@ -930,6 +1159,7 @@ class NeuroSymbolicSession:
                 fact["relation"],
                 fact["value"],
                 possessive=fact.get("possessive"),
+                attribute=fact.get("attribute"),
             )
 
     def answer_input(self, text: str) -> dict:
@@ -953,8 +1183,11 @@ class NeuroSymbolicSession:
         for fact in result["new_facts"]:
             subj = fact.get("subject", "")
             val = fact.get("value", "")
-            for token in (subj.lower(), val.lower()):
-                if token and token not in self._base.items:
+            attr = fact.get("attribute", "")
+            for token in filter(None, [subj.lower() if subj else None,
+                                       val.lower() if val else None,
+                                       attr.lower() if attr else None]):
+                if token not in self._base.items:
                     self._base.add_item(UniObject(word=token))
         return result
 
