@@ -13,8 +13,12 @@ Provides a symbolic language understanding engine with:
 
 from __future__ import annotations
 
+import ast as _ast
+import math as _math
+import operator as _op_module
 import re
 from array import array
+from collections import deque
 from dataclasses import dataclass, field
 from enum import IntEnum
 from typing import Callable
@@ -397,6 +401,8 @@ def _build_builtin_base() -> None:
         UniAssignment(word="contain",  logic=_logic_contains),
         UniAssignment(word="belong",   logic=_logic_belongs),
         UniAssignment(word="belongs",  logic=_logic_belongs),
+        UniAssignment(word="includes", logic=_logic_contains,  question_logic=_logic_question_lookup),
+        UniAssignment(word="include",  logic=_logic_contains,  question_logic=_logic_question_lookup),
         # common relation verbs
         UniAssignment(word="like",     logic=_logic_assign,    question_logic=_logic_question_lookup),
         UniAssignment(word="likes",    logic=_logic_assign,    question_logic=_logic_question_lookup),
@@ -410,6 +416,43 @@ def _build_builtin_base() -> None:
         UniAssignment(word="lives",    logic=_logic_assign,    question_logic=_logic_question_lookup),
         UniAssignment(word="own",      logic=_logic_assign,    question_logic=_logic_question_lookup),
         UniAssignment(word="owns",     logic=_logic_assign,    question_logic=_logic_question_lookup),
+        # appearance / state
+        UniAssignment(word="becomes",  logic=_logic_assign,    question_logic=_logic_question_lookup),
+        UniAssignment(word="became",   logic=_logic_assign,    question_logic=_logic_question_lookup),
+        UniAssignment(word="seems",    logic=_logic_assign,    question_logic=_logic_question_lookup),
+        UniAssignment(word="seem",     logic=_logic_assign,    question_logic=_logic_question_lookup),
+        UniAssignment(word="appears",  logic=_logic_assign,    question_logic=_logic_question_lookup),
+        UniAssignment(word="appear",   logic=_logic_assign,    question_logic=_logic_question_lookup),
+        # description / representation
+        UniAssignment(word="represents",logic=_logic_assign,   question_logic=_logic_question_lookup),
+        UniAssignment(word="represent", logic=_logic_assign,   question_logic=_logic_question_lookup),
+        UniAssignment(word="describes", logic=_logic_assign,   question_logic=_logic_question_lookup),
+        UniAssignment(word="describe",  logic=_logic_assign,   question_logic=_logic_question_lookup),
+        UniAssignment(word="defines",   logic=_logic_assign,   question_logic=_logic_question_lookup),
+        UniAssignment(word="define",    logic=_logic_assign,   question_logic=_logic_question_lookup),
+        UniAssignment(word="means",     logic=_logic_assign,   question_logic=_logic_question_lookup),
+        UniAssignment(word="denotes",   logic=_logic_assign,   question_logic=_logic_question_lookup),
+        UniAssignment(word="denote",    logic=_logic_assign,   question_logic=_logic_question_lookup),
+        # numeric equality (verb form)
+        UniAssignment(word="equals",    logic=_logic_equals,   question_logic=_logic_question_lookup),
+        UniAssignment(word="equal",     logic=_logic_equals,   question_logic=_logic_question_lookup),
+        # directional (for symbolic parse recognition; multi-word extraction
+        # handles "leads to" etc. in _extract_fact_from_tokens)
+        UniAssignment(word="leads",     logic=_logic_assign,   question_logic=_logic_question_lookup),
+        UniAssignment(word="goes",      logic=_logic_assign,   question_logic=_logic_question_lookup),
+        UniAssignment(word="points",    logic=_logic_assign,   question_logic=_logic_question_lookup),
+        UniAssignment(word="connects",  logic=_logic_assign,   question_logic=_logic_question_lookup),
+        UniAssignment(word="flows",     logic=_logic_assign,   question_logic=_logic_question_lookup),
+        UniAssignment(word="links",     logic=_logic_assign,   question_logic=_logic_question_lookup),
+        # cause / relation
+        UniAssignment(word="causes",    logic=_logic_assign,   question_logic=_logic_question_lookup),
+        UniAssignment(word="requires",  logic=_logic_assign,   question_logic=_logic_question_lookup),
+        UniAssignment(word="produces",  logic=_logic_assign,   question_logic=_logic_question_lookup),
+        UniAssignment(word="involves",  logic=_logic_assign,   question_logic=_logic_question_lookup),
+        UniAssignment(word="supports",  logic=_logic_assign,   question_logic=_logic_question_lookup),
+        UniAssignment(word="refers",    logic=_logic_assign,   question_logic=_logic_question_lookup),
+        UniAssignment(word="called",    logic=_logic_assign,   question_logic=_logic_question_lookup),
+        UniAssignment(word="named",     logic=_logic_assign,   question_logic=_logic_question_lookup),
     ]
 
     # -- Pronouns (personal + possessive) -----------------------------------
@@ -712,6 +755,30 @@ _ASSIGNMENT_WORDS: frozenset = frozenset({
     "want", "wants", "need", "needs",
     "live", "lives",
     "own", "owns",
+    # containment / membership
+    "contains", "contain",
+    "belong", "belongs",
+    "includes", "include",
+    # appearance / state
+    "becomes", "became",
+    "seem", "seems", "seemed",
+    "appear", "appears", "appeared",
+    # description / representation
+    "represent", "represents",
+    "describe", "describes",
+    "define", "defines",
+    "means", "denote", "denotes",
+    # named / called
+    "called", "named",
+    # cause / relation
+    "causes", "cause",
+    "involves", "involve",
+    "requires", "require",
+    "supports", "support",
+    "produces", "produce",
+    "refers", "refer",
+    # numeric equality (verb form)
+    "equal", "equals",
 })
 
 # WH-question words recognised by the Q&A engine.
@@ -733,13 +800,251 @@ _POSSESSIVE_FLIP: dict = {
     "you":   "I",
 }
 
+# ---------------------------------------------------------------------------
+# Multi-word relation support (e.g. "leads to", "belongs to", "can be")
+# ---------------------------------------------------------------------------
+
+# Directional verbs that form "<verb> to" multi-word relations (graph edges).
+_DIRECTIONAL_VERBS: frozenset = frozenset({
+    "leads", "goes", "points", "connects", "flows", "links", "moves",
+    "takes", "routes", "travels",
+})
+
+# Mapping (token, next_token) → canonical relation string.
+# Checked BEFORE single-word _ASSIGNMENT_WORDS so "belongs to" is not
+# mistakenly extracted as the bare relation "belongs".
+_MULTI_WORD_RELATIONS: dict[tuple[str, str], str] = {
+    # directional / graph
+    ("leads", "to"):      "leads to",
+    ("goes", "to"):       "goes to",
+    ("points", "to"):     "points to",
+    ("connects", "to"):   "connects to",
+    ("flows", "to"):      "flows to",
+    ("links", "to"):      "links to",
+    ("moves", "to"):      "moves to",
+    ("takes", "to"):      "takes to",
+    ("routes", "to"):     "routes to",
+    ("travels", "to"):    "travels to",
+    # membership / structure
+    ("belongs", "to"):    "belongs to",
+    ("part", "of"):       "part of",
+    ("consists", "of"):   "consists of",
+    ("made", "of"):       "made of",
+    ("type", "of"):       "type of",
+    ("kind", "of"):       "kind of",
+    ("instance", "of"):   "instance of",
+    ("example", "of"):    "example of",
+    # modal + be (ability / possibility / expectation)
+    ("can", "be"):        "can be",
+    ("could", "be"):      "could be",
+    ("will", "be"):       "will be",
+    ("would", "be"):      "would be",
+    ("should", "be"):     "should be",
+    ("must", "be"):       "must be",
+    ("may", "be"):        "may be",
+    ("might", "be"):      "might be",
+}
+
+# Named math operations recognised in natural-language questions.
+_NAMED_MATH_OPS: dict[str, str] = {
+    "sum":        "+",
+    "total":      "+",
+    "product":    "*",
+    "difference": "-",
+    "quotient":   "/",
+}
+
+# ---------------------------------------------------------------------------
+# Math helpers
+# ---------------------------------------------------------------------------
+
+# Arithmetic operator symbols used by the math expression parser.
+_ARITH_OPS: frozenset = frozenset({"+", "-", "*", "/", "**"})
+_ARITH_OPS_AND_PARENS: frozenset = _ARITH_OPS | {"(", ")"}
+
+# Text-form arithmetic operators → symbolic form.
+_TEXT_TO_MATH_SYM: dict[str, str] = {
+    "plus": "+", "add": "+",
+    "minus": "-", "subtract": "-",
+    "times": "*", "multiply": "*", "multiplied": "*",
+    "divided": "/", "divide": "/",
+}
+
+
+def _format_node_name(name: str) -> str:
+    """Capitalize a node/place name for display (e.g. 'entrance' → 'Entrance')."""
+    return name.capitalize() if name else name
+
+
+def _fmt_num(n: int | float) -> str:
+    """Format a numeric value, stripping unnecessary trailing zeros."""
+    try:
+        if isinstance(n, int):
+            return str(n)
+        if isinstance(n, float):
+            if n == int(n) and abs(n) < 1e15:
+                return str(int(n))
+            return f"{n:.10g}"
+        return str(n)
+    except Exception:
+        return str(n)
+
+
+def _safe_eval_math(expr: str):
+    """
+    Safely evaluate a mathematical expression string using only numeric
+    literals and the operators +, -, *, /, ** (power), and %.
+
+    Returns the numeric result or ``None`` on any error.
+    """
+    _allowed: dict = {
+        _ast.Add:  _op_module.add,
+        _ast.Sub:  _op_module.sub,
+        _ast.Mult: _op_module.mul,
+        _ast.Div:  _op_module.truediv,
+        _ast.Pow:  _op_module.pow,
+        _ast.Mod:  _op_module.mod,
+        _ast.USub: _op_module.neg,
+        _ast.UAdd: _op_module.pos,
+    }
+
+    def _eval(node):
+        if isinstance(node, _ast.Constant) and isinstance(node.value, (int, float)):
+            return float(node.value)
+        if isinstance(node, _ast.BinOp):
+            left  = _eval(node.left)
+            right = _eval(node.right)
+            fn = _allowed.get(type(node.op))
+            if fn is None:
+                raise ValueError("unsupported operator")
+            if isinstance(node.op, _ast.Div) and right == 0:
+                raise ZeroDivisionError("division by zero")
+            return fn(left, right)
+        if isinstance(node, _ast.UnaryOp):
+            operand = _eval(node.operand)
+            fn = _allowed.get(type(node.op))
+            if fn is None:
+                raise ValueError("unsupported operator")
+            return fn(operand)
+        raise ValueError(f"unsupported node: {type(node).__name__}")
+
+    try:
+        tree = _ast.parse(expr.strip(), mode="eval")
+        return _eval(tree.body)
+    except ZeroDivisionError:
+        return None
+    except Exception:
+        return None
+
+
+def _try_evaluate_math_question(tokens: list[str]) -> str | None:
+    """
+    Detect and evaluate an arithmetic expression embedded in question tokens.
+
+    Handles:
+    - Direct expressions: ``5 + 3``, ``10 * (2 + 3)``
+    - Text operators: ``5 plus 3``, ``10 times 2``
+    - Named operations: ``sum of 5 and 3``, ``product of 4 and 7``
+    - Square root: ``square root of 16``
+    - Powers: ``2 to the power of 8``, ``2 ^ 8``
+
+    Returns a formatted answer string, or ``None`` if no arithmetic found.
+    """
+    # -- Square root ---------------------------------------------------------
+    if "root" in tokens:
+        idx = tokens.index("root")
+        if idx > 0 and tokens[idx - 1] == "square":
+            for j in range(idx + 1, len(tokens)):
+                try:
+                    n = float(tokens[j])
+                    if n < 0:
+                        return (f"The square root of {_fmt_num(n)} is not a real "
+                                "number (negative radicand).")
+                    r = _math.sqrt(n)
+                    return (f"The square root of {_fmt_num(n)} is {_fmt_num(r)}.")
+                except ValueError:
+                    pass
+
+    # -- Exponentiation: "X to the power of Y" -------------------------------
+    if "power" in tokens:
+        idx = tokens.index("power")
+        base_n: float | None = None
+        for j in range(idx - 1, -1, -1):
+            try:
+                base_n = float(tokens[j])
+                break
+            except ValueError:
+                pass
+        exp_n: float | None = None
+        for j in range(idx + 1, len(tokens)):
+            try:
+                exp_n = float(tokens[j])
+                break
+            except ValueError:
+                pass
+        if base_n is not None and exp_n is not None:
+            if abs(exp_n) > 300:
+                return (f"{_fmt_num(base_n)} to the power of {_fmt_num(exp_n)} "
+                        "is too large to compute.")
+            result = base_n ** exp_n
+            return (f"{_fmt_num(base_n)} to the power of {_fmt_num(exp_n)} "
+                    f"is {_fmt_num(result)}.")
+
+    # -- Named operations: "sum of X and Y" ----------------------------------
+    for i, tok in enumerate(tokens):
+        if tok in _NAMED_MATH_OPS:
+            op_sym = _NAMED_MATH_OPS[tok]
+            nums: list[float] = []
+            for j in range(i + 1, len(tokens)):
+                try:
+                    nums.append(float(tokens[j]))
+                except ValueError:
+                    pass
+            if len(nums) >= 2:
+                a, b = nums[0], nums[1]
+                if op_sym == "/" and b == 0:
+                    return "Division by zero is undefined."
+                op_fns = {"+": a + b, "*": a * b, "-": a - b, "/": a / b}
+                r = op_fns[op_sym]
+                return f"The {tok} of {_fmt_num(a)} and {_fmt_num(b)} is {_fmt_num(r)}."
+
+    # -- General expression: scan tokens for numbers + operators -------------
+    expr_parts: list[str] = []
+    for tok in tokens:
+        if tok in ("+", "-", "*", "/", "(", ")", "**"):
+            expr_parts.append(tok)
+        elif tok == "^":
+            expr_parts.append("**")
+        elif tok in _TEXT_TO_MATH_SYM:
+            expr_parts.append(_TEXT_TO_MATH_SYM[tok])
+        else:
+            try:
+                float(tok)
+                expr_parts.append(tok)
+            except ValueError:
+                pass
+
+    num_count = sum(1 for p in expr_parts if p not in _ARITH_OPS_AND_PARENS)
+    has_op    = any(p in _ARITH_OPS for p in expr_parts)
+    if num_count < 2 or not has_op:
+        return None
+
+    expr_str = " ".join(expr_parts)
+    result = _safe_eval_math(expr_str)
+    if result is None:
+        return None
+    display = expr_str.replace(" ** ", "^").replace("**", "^")
+    return f"{display} = {_fmt_num(result)}"
+
 
 def _split_sentences(text: str) -> list[tuple[str, bool]]:
     """
     Split *text* into a list of ``(sentence, is_question)`` tuples.
 
     Sentences are delimited by ``.``, ``!``, or ``?``.  A sentence ending with
-    ``?`` is marked as a question; all others are treated as declarative.
+    ``?`` is marked as a question.  Sentences that begin with a WH-question
+    word (what, who, where, …) are also treated as questions even if the
+    trailing ``?`` is omitted.
     """
     parts = re.split(r"(?<=[.!?])\s*", text.strip())
     result: list[tuple[str, bool]] = []
@@ -749,6 +1054,11 @@ def _split_sentences(text: str) -> list[tuple[str, bool]]:
             continue
         is_question = part.endswith("?")
         clean = part.rstrip(".!?").strip()
+        # Detect implicit WH-questions that lack a trailing "?"
+        if not is_question and clean:
+            first = clean.split()[0].lower()
+            if first in _QUESTION_WORDS:
+                is_question = True
         if clean:
             result.append((clean, is_question))
     return result
@@ -761,11 +1071,39 @@ def _extract_fact_from_tokens(tokens: list[str]) -> dict | None:
     Returns a dict ``{possessive, subject, relation, value}`` where
     ``possessive`` may be ``None``, or ``None`` if no fact pattern is found.
 
+    Multi-word relations (e.g. ``"leads to"``, ``"belongs to"``) are checked
+    first; single-word assignment relations are tried afterwards.
+
     Also handles possessive ``'s`` constructs: a token ending with ``'s``
     (e.g. ``"car's"``) is split into owner + attribute so that
     "my car's color is red" yields
     ``{possessive:"my", subject:"car", attribute:"color", relation:"is", value:"red"}``.
     """
+    # -- Multi-word relation detection (highest priority) --------------------
+    for i, tok in enumerate(tokens):
+        if i + 1 >= len(tokens):
+            continue
+        pair = (tok, tokens[i + 1])
+        if pair not in _MULTI_WORD_RELATIONS:
+            continue
+        relation = _MULTI_WORD_RELATIONS[pair]
+        left  = [t for t in tokens[:i]      if t not in _SKIP_WORDS]
+        right = [t for t in tokens[i + 2:]  if t not in _SKIP_WORDS]
+        if not left or not right:
+            continue
+        possessive = left[0] if left[0] in _POSSESSIVE_WORDS else None
+        subj_parts = left[1:] if possessive else left
+        subject    = " ".join(subj_parts)
+        value      = " ".join(right)
+        if subject:
+            return {
+                "possessive": possessive,
+                "subject":    subject,
+                "relation":   relation,
+                "value":      value,
+            }
+
+    # -- Single-word assignment relation detection ---------------------------
     for i, tok in enumerate(tokens):
         if tok not in _ASSIGNMENT_WORDS:
             continue
@@ -841,6 +1179,79 @@ def _find_related_facts(subject: str, possessive: str | None,
     return related
 
 
+# ---------------------------------------------------------------------------
+# Graph / path helpers
+# ---------------------------------------------------------------------------
+
+def _is_directional_relation(rel: str) -> bool:
+    """Return True when *rel* encodes a directed graph edge (e.g. "leads to")."""
+    parts = rel.lower().split()
+    return len(parts) >= 2 and parts[-1] == "to" and parts[0] in _DIRECTIONAL_VERBS
+
+
+def _build_directed_graph(facts: list[dict]) -> dict[str, list[str]]:
+    """
+    Build an adjacency list ``{source: [dest, ...]}`` from directional facts.
+    Edges are in insertion order (preserving the order facts were stated).
+    """
+    graph: dict[str, list[str]] = {}
+    for fact in facts:
+        if not _is_directional_relation(fact.get("relation", "")):
+            continue
+        src = fact.get("subject", "").lower().strip()
+        dst = fact.get("value",   "").lower().strip()
+        if src and dst:
+            if src not in graph:
+                graph[src] = []
+            if dst not in graph[src]:
+                graph[src].append(dst)
+    return graph
+
+
+def _find_path(target: str, facts: list[dict]) -> list[str] | None:
+    """
+    Return the shortest path (list of node names) that ends at *target*,
+    using BFS over the directed graph built from directional facts.
+
+    Exploration starts from the entry-point nodes (nodes that have no
+    incoming edges).  Falls back to trying all nodes as starting points
+    if no clear entry is found.
+
+    Returns ``None`` if no path exists.
+    """
+    graph = _build_directed_graph(facts)
+    if not graph:
+        return None
+
+    target_lower = target.lower().strip()
+
+    # Identify entry points (no incoming edges)
+    all_dests: set[str] = {dst for dsts in graph.values() for dst in dsts}
+    entries = [n for n in graph if n not in all_dests]
+    if not entries:
+        entries = list(graph.keys())
+
+    visited: set[str] = set()
+
+    for start in entries:
+        q: deque[list[str]] = deque()
+        q.append([start])
+
+        while q:
+            path = q.popleft()
+            node = path[-1]
+            if node == target_lower:
+                return path
+            if node in visited:
+                continue
+            visited.add(node)
+            for neighbor in graph.get(node, []):
+                if neighbor not in visited:
+                    q.append(path + [neighbor])
+
+    return None
+
+
 def _try_answer_question(tokens: list[str], facts: list[dict]) -> str | None:
     """
     Try to answer a question sentence (given as *tokens*) using *facts*.
@@ -849,13 +1260,18 @@ def _try_answer_question(tokens: list[str], facts: list[dict]) -> str | None:
     fact is found.
 
     Handles:
+    - Path queries:           "What is the path to Exit?"
+    - Reverse edge lookup:    "What leads to Exit?"
+    - Mathematical questions: "What is 5 + 3?", "What is the square root of 16?"
     - WH-word differentiation (what vs who vs where vs when vs …).
     - Possessive ``'s`` in the question subject ("what is my car's color?").
     - Related-facts fallback: when no direct answer exists, returns all
       facts known about the subject prefixed with "I don't know … but I
       know that …".
     """
-    # Locate the WH-word
+    # ----------------------------------------------------------------
+    # 0. Locate the WH-word (used by multiple branches below)
+    # ----------------------------------------------------------------
     q_word: str | None = None
     q_idx: int = -1
     for i, tok in enumerate(tokens):
@@ -864,8 +1280,55 @@ def _try_answer_question(tokens: list[str], facts: list[dict]) -> str | None:
             q_idx = i
             break
 
+    # ----------------------------------------------------------------
+    # 1. Path-to query: "What is the path to X?"
+    # ----------------------------------------------------------------
+    if "path" in tokens:
+        path_idx = tokens.index("path")
+        if path_idx + 1 < len(tokens) and tokens[path_idx + 1] == "to":
+            target_toks = [t for t in tokens[path_idx + 2:] if t not in _SKIP_WORDS]
+            if target_toks:
+                target = " ".join(target_toks)
+                path = _find_path(target, facts)
+                if path:
+                    path_display = ", ".join(_format_node_name(w) for w in path)
+                    return f"The path to {_format_node_name(target)} is {path_display}."
+                return f"I cannot find a path to {_format_node_name(target)} in what I know."
+
+    # ----------------------------------------------------------------
+    # 2. Reverse directional lookup: "What leads to X?"
+    #    Pattern: q_word at position 0 + directional_verb + "to" + value
+    # ----------------------------------------------------------------
+    if q_word is not None and q_idx + 2 < len(tokens):
+        nxt = tokens[q_idx + 1]
+        if nxt in _DIRECTIONAL_VERBS and tokens[q_idx + 2] == "to":
+            val_toks = [t for t in tokens[q_idx + 3:] if t not in _SKIP_WORDS]
+            if val_toks:
+                target_val = " ".join(val_toks)
+                rel        = f"{nxt} to"
+                matches = [
+                    f.get("subject", "")
+                    for f in facts
+                    if f.get("value",    "").lower() == target_val.lower()
+                    and f.get("relation","").lower() == rel
+                ]
+                if matches:
+                    subj_str = " and ".join(_format_node_name(m) for m in matches)
+                    return f"{subj_str} {rel} {_format_node_name(target_val)}."
+                return (f"I don't know what {rel} {_format_node_name(target_val)} "
+                        "based on what I know.")
+
+    # ----------------------------------------------------------------
+    # 3. Mathematical question: "What is 5 + 3?", "How much is 10 * 2?"
+    # ----------------------------------------------------------------
+    math_answer = _try_evaluate_math_question(tokens)
+    if math_answer is not None:
+        return math_answer
+
+    # ----------------------------------------------------------------
+    # 4. Standard WH-question forward lookup (existing behaviour)
+    # ----------------------------------------------------------------
     if q_word is None:
-        # Yes/no question fallback – not a WH question, skip
         return None
 
     # Locate the first assignment/relation word after the question word
