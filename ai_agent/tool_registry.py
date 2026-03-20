@@ -161,6 +161,25 @@ def _get_timetable(user: User, day_of_week: int | None = None, **_) -> dict:
     return {'entries': entries, 'count': len(entries)}
 
 
+def _neuro_symbolic_parse(user: User, sentence: str, **_) -> dict:
+    """
+    Parse a natural language sentence using the neuro-symbolic engine.
+    Returns the tokenised, classified, and connection graph as a dict.
+    """
+    from ai_agent.neuro_symbolic import evaluate_sentence
+    return evaluate_sentence(sentence)
+
+
+def _neuro_symbolic_query(user: User, word: str, **_) -> dict:
+    """
+    Look up a word in the built-in neuro-symbolic knowledge base and return
+    all matching UniItems (operators, assignments, pronouns, etc.).
+    """
+    from ai_agent.neuro_symbolic import query_word
+    matches = query_word(word)
+    return {'word': word, 'matches': matches, 'count': len(matches)}
+
+
 def _create_timetable_entry(
     user: User, title: str, event_type: str = 'lecture',
     location: str = '', start_time: str = '08:00', end_time: str = '09:00',
@@ -372,6 +391,59 @@ TOOLS: list[dict[str, Any]] = [
             },
         },
         'handler': _create_timetable_entry,
+    },
+    {
+        'schema': {
+            'type': 'function',
+            'function': {
+                'name': 'neuro_symbolic_parse',
+                'description': (
+                    'Parse a natural language sentence using the built-in '
+                    'neuro-symbolic AI engine. Returns a symbolic breakdown: '
+                    'tokens, their classifications (operator / assignment / '
+                    'pronoun / object), connection graph, and evaluated results '
+                    'for any operators or assignments found in the sentence. '
+                    'Use this to reason about or explain a sentence symbolically.'
+                ),
+                'parameters': {
+                    'type': 'object',
+                    'properties': {
+                        'sentence': {
+                            'type': 'string',
+                            'description': 'The natural language sentence to parse.',
+                        },
+                    },
+                    'required': ['sentence'],
+                },
+            },
+        },
+        'handler': _neuro_symbolic_parse,
+    },
+    {
+        'schema': {
+            'type': 'function',
+            'function': {
+                'name': 'neuro_symbolic_query',
+                'description': (
+                    'Query the neuro-symbolic knowledge base for a specific word. '
+                    'Returns all built-in UniItems registered under that word '
+                    '(e.g. operators like "and", "or", assignments like "is", "has", '
+                    'pronouns like "it", "they"). Useful for introspecting what the '
+                    'engine knows about a particular token.'
+                ),
+                'parameters': {
+                    'type': 'object',
+                    'properties': {
+                        'word': {
+                            'type': 'string',
+                            'description': 'The word to look up in the knowledge base.',
+                        },
+                    },
+                    'required': ['word'],
+                },
+            },
+        },
+        'handler': _neuro_symbolic_query,
     },
 ]
 
