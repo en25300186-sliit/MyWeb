@@ -217,6 +217,7 @@ def neuro_symbolic_process(request):
     parse    – ``{"action": "parse", "sentence": "<text>"}``
     query    – ``{"action": "query", "word": "<word>"}``
     add_fact – ``{"action": "add_fact", "subject": "...", "relation": "...", "value": "..."}``
+    answer   – ``{"action": "answer", "text": "<multi-sentence text>"}``
     clear    – ``{"action": "clear"}``
 
     Returns JSON ``{"ok": true, "result": {...}}`` or ``{"error": "..."}``
@@ -252,10 +253,24 @@ def neuro_symbolic_process(request):
                 {'error': 'subject, relation, and value are all required.'}, status=400
             )
         engine.add_fact(subject, relation, value)
-        facts.append({'subject': subject, 'relation': relation, 'value': value})
+        facts.append({'subject': subject, 'relation': relation, 'value': value,
+                      'possessive': ''})
         request.session[_NS_SESSION_KEY] = facts
         request.session.modified = True
         return JsonResponse({'ok': True, 'facts': facts})
+
+    elif action == 'answer':
+        text = body.get('text', '').strip()
+        if not text:
+            return JsonResponse({'error': 'No text provided.'}, status=400)
+        result = engine.answer_input(text)
+        # Persist any newly extracted facts to the session
+        if result.get('new_facts'):
+            for fact in result['new_facts']:
+                facts.append(fact)
+            request.session[_NS_SESSION_KEY] = facts
+            request.session.modified = True
+        return JsonResponse({'ok': True, 'result': result})
 
     elif action == 'clear':
         request.session[_NS_SESSION_KEY] = []

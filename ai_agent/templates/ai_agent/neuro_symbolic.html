@@ -15,6 +15,12 @@
 <!-- Tabs -->
 <ul class="nav nav-tabs mb-4" id="nsTabs" role="tablist">
   <li class="nav-item" role="presentation">
+    <button class="nav-link" id="chat-tab" data-bs-toggle="tab" data-bs-target="#chat-panel"
+            type="button" role="tab">
+      <i class="bi bi-chat-dots me-1"></i>Chat / Answer
+    </button>
+  </li>
+  <li class="nav-item" role="presentation">
     <button class="nav-link active" id="parse-tab" data-bs-toggle="tab" data-bs-target="#parse-panel"
             type="button" role="tab">
       <i class="bi bi-text-paragraph me-1"></i>Parse Sentence
@@ -36,6 +42,40 @@
 </ul>
 
 <div class="tab-content">
+
+  <!-- ===== CHAT TAB ===== -->
+  <div class="tab-pane fade" id="chat-panel" role="tabpanel">
+    <div class="card border-0 shadow-sm mb-4">
+      <div class="card-body">
+        <p class="text-muted small mb-3">
+          Type one or more sentences. Declarative sentences (ending with <code>.</code>) teach the AI facts.
+          Questions (ending with <code>?</code>) are answered from the stored facts.
+          <br>
+          <strong>Example:</strong> <em>my name is geemeth. what is my name?</em>
+        </p>
+        <div class="input-group">
+          <textarea id="chatInput" class="form-control" rows="2"
+                    placeholder="e.g. my name is geemeth. what is my name?"
+                    autocomplete="off"></textarea>
+          <button class="btn btn-primary" id="chatBtn">
+            <i class="bi bi-send-fill me-1"></i>Send
+          </button>
+        </div>
+        <div class="mt-2 d-flex flex-wrap gap-1" id="chatExamples">
+          <span class="text-muted small me-1">Try:</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Spinner -->
+    <div id="chatSpinner" class="text-center py-4 d-none">
+      <div class="spinner-border text-primary" role="status"></div>
+      <p class="mt-2 text-muted">Thinking…</p>
+    </div>
+
+    <!-- Chat history -->
+    <div id="chatHistory" class="d-flex flex-column gap-3"></div>
+  </div><!-- /chat-panel -->
 
   <!-- ===== PARSE TAB ===== -->
   <div class="tab-pane fade show active" id="parse-panel" role="tabpanel">
@@ -221,7 +261,7 @@
             </div>
           </div>
           <div class="col-md-4">
-            <h6 class="fw-semibold text-info">Pronouns</h6>
+            <h6 class="fw-semibold text-info">Pronouns &amp; Possessives</h6>
             <div class="d-flex flex-wrap gap-1">
               <span class="badge bg-info query-chip" style="cursor:pointer;">it</span>
               <span class="badge bg-info query-chip" style="cursor:pointer;">this</span>
@@ -232,6 +272,26 @@
               <span class="badge bg-info query-chip" style="cursor:pointer;">we</span>
               <span class="badge bg-info query-chip" style="cursor:pointer;">i</span>
               <span class="badge bg-info query-chip" style="cursor:pointer;">you</span>
+              <span class="badge bg-info query-chip" style="cursor:pointer;">my</span>
+              <span class="badge bg-info query-chip" style="cursor:pointer;">your</span>
+              <span class="badge bg-info query-chip" style="cursor:pointer;">his</span>
+              <span class="badge bg-info query-chip" style="cursor:pointer;">her</span>
+              <span class="badge bg-info query-chip" style="cursor:pointer;">its</span>
+              <span class="badge bg-info query-chip" style="cursor:pointer;">our</span>
+              <span class="badge bg-info query-chip" style="cursor:pointer;">their</span>
+            </div>
+          </div>
+          <div class="col-md-4 mt-3">
+            <h6 class="fw-semibold text-purple" style="color:#6f42c1;">WH-Questions</h6>
+            <div class="d-flex flex-wrap gap-1">
+              <span class="badge query-chip" style="cursor:pointer;background:#6f42c1;">what</span>
+              <span class="badge query-chip" style="cursor:pointer;background:#6f42c1;">where</span>
+              <span class="badge query-chip" style="cursor:pointer;background:#6f42c1;">when</span>
+              <span class="badge query-chip" style="cursor:pointer;background:#6f42c1;">who</span>
+              <span class="badge query-chip" style="cursor:pointer;background:#6f42c1;">whom</span>
+              <span class="badge query-chip" style="cursor:pointer;background:#6f42c1;">why</span>
+              <span class="badge query-chip" style="cursor:pointer;background:#6f42c1;">how</span>
+              <span class="badge query-chip" style="cursor:pointer;background:#6f42c1;">which</span>
             </div>
           </div>
         </div>
@@ -343,8 +403,7 @@ async function apiFetch(payload) {
   return r.json();
 }
 
-// ── Token type → badge colour ─────────────────────────────────────────────
-
+// Token type → badge colour
 const TYPE_BADGE = {
   UNIOPERATOR:   'warning text-dark',
   UNIASSIGNMENT: 'success',
@@ -353,9 +412,13 @@ const TYPE_BADGE = {
   UNISYNTAX:     'secondary',
   UNICONNECTION: 'dark',
   UNIACTION:     'danger',
+  UNIQUESTION:   'purple',
 };
 
 function typeBadge(type) {
+  if (type === 'UNIQUESTION') {
+    return `<span class="badge" style="background:#6f42c1;">${escHtml(type)}</span>`;
+  }
   const cls = TYPE_BADGE[type] || 'secondary';
   return `<span class="badge bg-${cls}">${escHtml(type)}</span>`;
 }
@@ -366,6 +429,109 @@ function resultBadge(val) {
   if (val === false) return '<span class="badge bg-danger">false</span>';
   if (typeof val === 'object') return `<code>${escHtml(JSON.stringify(val))}</code>`;
   return `<code>${escHtml(String(val))}</code>`;
+}
+
+// ── CHAT / ANSWER ────────────────────────────────────────────────────────
+
+document.getElementById('chatBtn').addEventListener('click', doChat);
+document.getElementById('chatInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); doChat(); }
+});
+
+// Example chat prompts
+(function buildChatExamples() {
+  const examples = [
+    'my name is geemeth. what is my name?',
+    'my car is red. what is my car?',
+    'the sky is blue. what is the sky?',
+    'my age is 25. what is my age?',
+    'who is the teacher? the teacher is mr smith. who is the teacher?',
+  ];
+  const container = document.getElementById('chatExamples');
+  examples.forEach(ex => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'btn btn-outline-secondary btn-sm py-0';
+    btn.style.fontSize = '.75rem';
+    btn.textContent = ex;
+    btn.addEventListener('click', () => {
+      document.getElementById('chatInput').value = ex;
+      doChat();
+    });
+    container.appendChild(btn);
+  });
+})();
+
+async function doChat() {
+  const text = document.getElementById('chatInput').value.trim();
+  if (!text) return;
+
+  document.getElementById('chatSpinner').classList.remove('d-none');
+
+  const data = await apiFetch({action: 'answer', text});
+
+  document.getElementById('chatSpinner').classList.add('d-none');
+
+  if (data.error) {
+    alert('Error: ' + data.error);
+    return;
+  }
+
+  const res = data.result;
+  const history = document.getElementById('chatHistory');
+
+  // User bubble
+  const userBubble = document.createElement('div');
+  userBubble.className = 'd-flex justify-content-end';
+  userBubble.innerHTML = `
+    <div class="card border-0 shadow-sm" style="max-width:75%;background:#0d6efd;color:#fff;">
+      <div class="card-body py-2 px-3">
+        <p class="mb-0 small" style="white-space:pre-wrap;">${escHtml(text)}</p>
+      </div>
+    </div>`;
+  history.appendChild(userBubble);
+
+  // AI reply bubble
+  const aiBubble = document.createElement('div');
+  aiBubble.className = 'd-flex justify-content-start';
+
+  const replyText = res.reply || '(no answer)';
+  const newFacts = res.new_facts || [];
+
+  let factsHtml = '';
+  if (newFacts.length) {
+    factsHtml = `<p class="mb-1 small text-muted fst-italic">Learned ${newFacts.length} fact(s):
+      ${newFacts.map(f =>
+        `<code>${escHtml((f.possessive ? f.possessive + ' ' : '') + f.subject)} ${escHtml(f.relation)} ${escHtml(f.value)}</code>`
+      ).join(', ')}</p>`;
+  }
+
+  aiBubble.innerHTML = `
+    <div class="card border-0 shadow-sm" style="max-width:75%;">
+      <div class="card-body py-2 px-3">
+        ${factsHtml}
+        <p class="mb-0"><strong>AI:</strong> ${escHtml(replyText)}</p>
+      </div>
+    </div>`;
+  history.appendChild(aiBubble);
+
+  // Scroll to bottom
+  aiBubble.scrollIntoView({behavior: 'smooth', block: 'nearest'});
+
+  // Clear input
+  document.getElementById('chatInput').value = '';
+
+  // Update KB badge if new facts were added
+  if (newFacts.length) {
+    const kbTab = document.getElementById('kb-tab');
+    let badge = kbTab.querySelector('.badge');
+    if (!badge) {
+      badge = document.createElement('span');
+      badge.className = 'badge bg-primary ms-1';
+      kbTab.appendChild(badge);
+    }
+    badge.textContent = parseInt(badge.textContent || '0', 10) + newFacts.length;
+  }
 }
 
 // ── PARSE ─────────────────────────────────────────────────────────────────
