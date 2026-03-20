@@ -1,0 +1,354 @@
+{% extends 'base.html' %}
+{% block title %}AI Studio Launcher – EngiHub{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <div>
+    <h1 class="fw-bold mb-0"><i class="bi bi-stars text-warning me-2"></i>AI Studio Launcher</h1>
+    <p class="text-muted mb-0">Control Google AI Studio via an automated browser – switch models, manage chats &amp; system instructions.</p>
+  </div>
+  <a href="{% url 'dashboard' %}" class="btn btn-outline-secondary btn-sm">
+    <i class="bi bi-arrow-left me-1"></i>Dashboard
+  </a>
+</div>
+
+<!-- Status bar -->
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-body d-flex align-items-center gap-3 py-3">
+    <div id="statusDot" class="rounded-circle" style="width:14px;height:14px;flex-shrink:0;"></div>
+    <span class="fw-semibold me-1">Browser status:</span>
+    <span id="statusText" class="text-capitalize">{{ browser_status }}</span>
+    <div class="ms-auto d-flex gap-2">
+      <button id="btnLaunch" class="btn btn-success btn-sm" {% if is_running %}disabled{% endif %}>
+        <i class="bi bi-play-circle me-1"></i>Launch Browser
+      </button>
+      <button id="btnStop" class="btn btn-danger btn-sm" {% if not is_running %}disabled{% endif %}>
+        <i class="bi bi-stop-circle me-1"></i>Stop Browser
+      </button>
+      <a href="https://aistudio.google.com/prompts/new_chat" target="_blank" class="btn btn-outline-primary btn-sm">
+        <i class="bi bi-box-arrow-up-right me-1"></i>Open Manually
+      </a>
+    </div>
+  </div>
+</div>
+
+<!-- Info banner when browser is not running -->
+<div id="notRunningBanner" class="alert alert-info border-0 shadow-sm mb-4 {% if is_running %}d-none{% endif %}">
+  <i class="bi bi-info-circle me-2"></i>
+  Click <strong>Launch Browser</strong> to open Google AI Studio in a visible Chrome window.
+  If you are not signed in, you can sign in directly in the browser window – the tool uses your default Chrome profile.
+</div>
+
+<!-- Controls (disabled until browser is running) -->
+<div id="controlPanel" class="{% if not is_running %}opacity-50 pe-none{% endif %}">
+
+  <div class="row g-3">
+
+    <!-- Model Switcher -->
+    <div class="col-md-6">
+      <div class="card border-0 shadow-sm h-100">
+        <div class="card-header bg-white fw-semibold border-bottom">
+          <i class="bi bi-box me-2 text-primary"></i>Switch Model
+        </div>
+        <div class="card-body">
+          <select id="modelSelect" class="form-select mb-3">
+            {% for m in models %}
+            <option value="{{ m }}">{{ m }}</option>
+            {% endfor %}
+          </select>
+          <button class="btn btn-primary w-100" onclick="doAction('switch_model', {model: document.getElementById('modelSelect').value})">
+            <i class="bi bi-arrow-repeat me-1"></i>Switch Model
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- System Instruction -->
+    <div class="col-md-6">
+      <div class="card border-0 shadow-sm h-100">
+        <div class="card-header bg-white fw-semibold border-bottom">
+          <i class="bi bi-card-text me-2 text-success"></i>System Instruction
+        </div>
+        <div class="card-body">
+          <textarea id="sysInstructionInput" class="form-control mb-3" rows="4"
+                    placeholder="Enter system instruction…"></textarea>
+          <button class="btn btn-success w-100" onclick="doAction('set_system_instruction', {instruction: document.getElementById('sysInstructionInput').value})">
+            <i class="bi bi-check2-circle me-1"></i>Apply Instruction
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Chat Management -->
+    <div class="col-md-6">
+      <div class="card border-0 shadow-sm h-100">
+        <div class="card-header bg-white fw-semibold border-bottom">
+          <i class="bi bi-chat-dots me-2 text-info"></i>Chat Management
+        </div>
+        <div class="card-body">
+          <div class="d-grid gap-2 mb-3">
+            <button class="btn btn-outline-info" onclick="doAction('new_chat', {})">
+              <i class="bi bi-plus-circle me-1"></i>New Chat
+            </button>
+            <button class="btn btn-outline-secondary" onclick="loadChats()">
+              <i class="bi bi-list-ul me-1"></i>List Chats
+            </button>
+          </div>
+          <!-- Chat list -->
+          <div id="chatList" class="list-group list-group-flush" style="max-height:200px;overflow-y:auto;"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Send Message -->
+    <div class="col-md-6">
+      <div class="card border-0 shadow-sm h-100">
+        <div class="card-header bg-white fw-semibold border-bottom">
+          <i class="bi bi-send me-2 text-warning"></i>Send Message
+        </div>
+        <div class="card-body">
+          <textarea id="msgInput" class="form-control mb-3" rows="4"
+                    placeholder="Type a message to send…"></textarea>
+          <button class="btn btn-warning w-100 text-white" onclick="doAction('send_message', {message: document.getElementById('msgInput').value})">
+            <i class="bi bi-send me-1"></i>Send
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Add Tool / Navigate -->
+    <div class="col-md-6">
+      <div class="card border-0 shadow-sm h-100">
+        <div class="card-header bg-white fw-semibold border-bottom">
+          <i class="bi bi-plugin me-2 text-danger"></i>Add Tool / Grounding
+        </div>
+        <div class="card-body">
+          <input id="toolNameInput" type="text" class="form-control mb-3"
+                 placeholder="e.g. Google Search, Code execution…" />
+          <button class="btn btn-danger w-100 text-white" onclick="doAction('add_tool', {tool_name: document.getElementById('toolNameInput').value})">
+            <i class="bi bi-plus-square me-1"></i>Add Tool
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Custom Navigate -->
+    <div class="col-md-6">
+      <div class="card border-0 shadow-sm h-100">
+        <div class="card-header bg-white fw-semibold border-bottom">
+          <i class="bi bi-compass me-2 text-secondary"></i>Navigate
+        </div>
+        <div class="card-body">
+          <input id="navUrlInput" type="url" class="form-control mb-3"
+                 value="https://aistudio.google.com/prompts/new_chat"
+                 placeholder="https://…" />
+          <button class="btn btn-secondary w-100" onclick="doAction('navigate', {url: document.getElementById('navUrlInput').value})">
+            <i class="bi bi-arrow-right-circle me-1"></i>Go
+          </button>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /row -->
+</div><!-- /controlPanel -->
+
+<!-- Activity Log -->
+<div class="card border-0 shadow-sm mt-4">
+  <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center">
+    <span><i class="bi bi-terminal me-2"></i>Activity Log</span>
+    <button class="btn btn-sm btn-outline-light" onclick="clearLog()">Clear</button>
+  </div>
+  <div class="card-body p-0">
+    <ul id="activityLog" class="list-group list-group-flush"
+        style="max-height:220px;overflow-y:auto;font-family:monospace;font-size:.85rem;">
+      <li class="list-group-item text-muted">No activity yet.</li>
+    </ul>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  const csrfToken = '{{ csrf_token }}';
+  const statusUrl   = '{% url "aistudio_status" %}';
+  const launchUrl   = '{% url "aistudio_launch" %}';
+  const stopUrl     = '{% url "aistudio_stop" %}';
+  const actionUrl   = '{% url "aistudio_action" %}';
+
+  // ---- status polling ----
+  let pollTimer = null;
+
+  function updateStatusUI(status, isRunning) {
+    const dot  = document.getElementById('statusDot');
+    const text = document.getElementById('statusText');
+    const btnL = document.getElementById('btnLaunch');
+    const btnS = document.getElementById('btnStop');
+    const panel = document.getElementById('controlPanel');
+    const banner = document.getElementById('notRunningBanner');
+
+    text.textContent = status;
+
+    const colours = {
+      running:   '#198754',
+      launching: '#fd7e14',
+      error:     '#dc3545',
+      stopped:   '#6c757d',
+    };
+    dot.style.backgroundColor = colours[status] || '#6c757d';
+
+    btnL.disabled = isRunning || status === 'launching';
+    btnS.disabled = !isRunning;
+
+    if (isRunning) {
+      panel.classList.remove('opacity-50', 'pe-none');
+      banner.classList.add('d-none');
+    } else {
+      panel.classList.add('opacity-50', 'pe-none');
+      banner.classList.remove('d-none');
+    }
+  }
+
+  function pollStatus() {
+    fetch(statusUrl)
+      .then(r => r.json())
+      .then(d => updateStatusUI(d.status, d.is_running))
+      .catch(() => {});
+  }
+
+  function startPolling() {
+    if (pollTimer) clearInterval(pollTimer);
+    pollTimer = setInterval(pollStatus, 2000);
+  }
+
+  // ---- launch / stop ----
+  document.getElementById('btnLaunch').addEventListener('click', function () {
+    this.disabled = true;
+    log('info', 'Launching browser…');
+    fetch(launchUrl, {method: 'POST', headers: {'X-CSRFToken': csrfToken}})
+      .then(r => r.json())
+      .then(d => {
+        log(d.success ? 'success' : 'error', d.message || d.error || 'Launch initiated');
+        pollStatus();
+      })
+      .catch(e => log('error', 'Launch request failed: ' + e));
+  });
+
+  document.getElementById('btnStop').addEventListener('click', function () {
+    this.disabled = true;
+    log('info', 'Stopping browser…');
+    fetch(stopUrl, {method: 'POST', headers: {'X-CSRFToken': csrfToken}})
+      .then(r => r.json())
+      .then(d => {
+        log(d.success ? 'success' : 'error', d.message || d.error || 'Stop signal sent');
+        pollStatus();
+      })
+      .catch(e => log('error', 'Stop request failed: ' + e));
+  });
+
+  // ---- generic action ----
+  function doAction(action, payload) {
+    log('info', `Action: ${action}…`);
+    fetch(actionUrl, {
+      method: 'POST',
+      headers: {'X-CSRFToken': csrfToken, 'Content-Type': 'application/json'},
+      body: JSON.stringify({action, ...payload}),
+    })
+      .then(r => r.json())
+      .then(d => {
+        if (d.success) {
+          log('success', d.message || 'Done.');
+        } else {
+          log('error', d.error || 'Action failed.');
+        }
+      })
+      .catch(e => log('error', 'Request failed: ' + e));
+  }
+
+  // ---- chat list ----
+  function loadChats() {
+    log('info', 'Loading chat list…');
+    fetch(actionUrl, {
+      method: 'POST',
+      headers: {'X-CSRFToken': csrfToken, 'Content-Type': 'application/json'},
+      body: JSON.stringify({action: 'list_chats'}),
+    })
+      .then(r => r.json())
+      .then(d => {
+        if (d.success) {
+          renderChats(d.chats || []);
+          log('success', `Found ${(d.chats || []).length} chat(s).`);
+        } else {
+          log('error', d.error || 'Failed to list chats.');
+        }
+      })
+      .catch(e => log('error', 'Request failed: ' + e));
+  }
+
+  function renderChats(chats) {
+    const el = document.getElementById('chatList');
+    if (!chats.length) {
+      el.innerHTML = '<div class="list-group-item text-muted small">No chats found.</div>';
+      return;
+    }
+    el.innerHTML = chats.map(c => `
+      <div class="list-group-item list-group-item-action d-flex justify-content-between align-items-center py-2 px-3">
+        <span class="text-truncate small">${escHtml(c.title)}</span>
+        <button class="btn btn-sm btn-outline-danger ms-2 flex-shrink-0"
+                onclick="deleteChat(this, '${escHtml(c.title).replace(/'/g,"\\'")}')">
+          <i class="bi bi-trash"></i>
+        </button>
+      </div>`).join('');
+  }
+
+  function deleteChat(btn, title) {
+    btn.disabled = true;
+    log('info', `Deleting chat "${title}"…`);
+    fetch(actionUrl, {
+      method: 'POST',
+      headers: {'X-CSRFToken': csrfToken, 'Content-Type': 'application/json'},
+      body: JSON.stringify({action: 'delete_chat', title}),
+    })
+      .then(r => r.json())
+      .then(d => {
+        if (d.success) {
+          log('success', d.message || `Deleted "${title}".`);
+          btn.closest('.list-group-item').remove();
+        } else {
+          log('error', d.error || 'Delete failed.');
+          btn.disabled = false;
+        }
+      })
+      .catch(e => { log('error', 'Request failed: ' + e); btn.disabled = false; });
+  }
+
+  // ---- log helpers ----
+  function log(level, msg) {
+    const ul = document.getElementById('activityLog');
+    const empty = ul.querySelector('.text-muted');
+    if (empty) ul.innerHTML = '';
+    const colours = {success: 'text-success', error: 'text-danger', info: 'text-secondary'};
+    const now = new Date().toLocaleTimeString();
+    const li = document.createElement('li');
+    li.className = `list-group-item py-1 px-3 ${colours[level] || ''}`;
+    li.innerHTML = `<span class="me-2 text-muted">[${now}]</span>${escHtml(msg)}`;
+    ul.appendChild(li);
+    ul.scrollTop = ul.scrollHeight;
+  }
+
+  function clearLog() {
+    document.getElementById('activityLog').innerHTML =
+      '<li class="list-group-item text-muted">No activity yet.</li>';
+  }
+
+  function escHtml(str) {
+    return String(str)
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+      .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+  }
+
+  // ---- initialise ----
+  updateStatusUI('{{ browser_status }}', {{ is_running|yesno:"true,false" }});
+  startPolling();
+</script>
+{% endblock %}

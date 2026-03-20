@@ -23,6 +23,12 @@ urlpatterns = [
     path('tools/timetable/add/', views.timetable_create, name='timetable_create'),
     path('tools/timetable/<int:pk>/edit/', views.timetable_edit, name='timetable_edit'),
     path('tools/timetable/<int:pk>/delete/', views.timetable_delete, name='timetable_delete'),
+    # AI Studio launcher
+    path('tools/aistudio/', views.aistudio_launcher, name='aistudio_launcher'),
+    path('tools/aistudio/launch/', views.aistudio_launch, name='aistudio_launch'),
+    path('tools/aistudio/stop/', views.aistudio_stop, name='aistudio_stop'),
+    path('tools/aistudio/status/', views.aistudio_status, name='aistudio_status'),
+    path('tools/aistudio/action/', views.aistudio_action, name='aistudio_action'),
     # API
     path('api/server-time/', views.server_time, name='server_time'),
     path('api/today-timetable/', views.api_today_timetable, name='api_today_timetable'),
