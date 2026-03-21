@@ -914,6 +914,21 @@ def evaluate_sentence(text: str, base: UniBase | None = None) -> dict:
 # Words that are skipped when extracting subject/value tokens from a sentence.
 _SKIP_WORDS: frozenset = frozenset({"the", "a", "an"})
 
+
+def _strip_leading_articles(tokens: list[str]) -> list[str]:
+    """Remove only leading article tokens ('a', 'an', 'the') from *tokens*.
+
+    Unlike a blanket filter over ``_SKIP_WORDS`` that would remove every
+    occurrence of these words, this function removes them only when they
+    appear at the very start of the token list (where they act as grammatical
+    articles).  Tokens that follow a non-article word are preserved, so that
+    multi-word identifiers such as *"Room A"* or *"Plan B"* remain intact.
+    """
+    i = 0
+    while i < len(tokens) and tokens[i] in _SKIP_WORDS:
+        i += 1
+    return tokens[i:]
+
 # Verb equivalence groups used by _rel_match.
 # Be-verbs describe identity/description; have-verbs describe possession.
 # These two groups are intentionally kept SEPARATE so that facts stored with
@@ -1264,19 +1279,24 @@ def _find_path_between(
     """Find the shortest path in the directed fact graph from *start* to
     *target* using BFS.
 
-    Returns a list of node names (in order), or ``None`` if unreachable.
+    Both *start* and *target* are resolved to their canonical Meaning IDs
+    (m_ids) before the search, so entities declared equivalent via
+    ``is``/be-verb facts share the same graph node.
+
+    Returns a list of m_id node names (in order), or ``None`` if unreachable.
     """
+    m_id = _build_meaning_id_map(facts)
     graph = _build_directed_graph(facts)
-    start_lower  = start.lower().strip()
-    target_lower = target.lower().strip()
+    start_id  = m_id.get(start.lower().strip(),  start.lower().strip())
+    target_id = m_id.get(target.lower().strip(), target.lower().strip())
 
     visited: set[str] = set()
-    q: deque[list[str]] = deque([[start_lower]])
+    q: deque[list[str]] = deque([[start_id]])
 
     while q:
         path = q.popleft()
         node = path[-1]
-        if node == target_lower:
+        if node == target_id:
             return path
         if node in visited:
             continue
@@ -2017,11 +2037,11 @@ def _extract_fact_from_tokens(tokens: list[str]) -> dict | None:
             continue
         relation = _MULTI_WORD_RELATIONS[pair]
         raw_left  = tokens[:i]
-        left  = [t for t in raw_left  if t not in _SKIP_WORDS]
+        left  = _strip_leading_articles(raw_left)
         # Preserve standalone "a" as a variable name (not an article)
         if not left and raw_left == ["a"]:
             left = ["a"]
-        right = [t for t in tokens[i + 2:]  if t not in _SKIP_WORDS]
+        right = _strip_leading_articles(tokens[i + 2:])
         if not left or not right:
             continue
         possessive = left[0] if left[0] in _POSSESSIVE_WORDS else None
@@ -2041,14 +2061,19 @@ def _extract_fact_from_tokens(tokens: list[str]) -> dict | None:
         if tok not in _ASSIGNMENT_WORDS:
             continue
         raw_left = tokens[:i]
-        left = [t for t in raw_left if t not in _SKIP_WORDS]
+        left = _strip_leading_articles(raw_left)
         # Preserve standalone "a" as a variable name (not an article)
         if not left and raw_left == ["a"]:
             left = ["a"]
-        # Right side: keep "a" so that "ratio is a divided by b" is stored
-        # with the full expression; this enables expression evaluation later.
-        right = [t for t in tokens[i + 1:]
-                 if t not in (_SKIP_WORDS - {"a"})]
+        # Right side: strip leading "the"/"an" only; always keep "a" so that
+        # expressions like "ratio is a divided by b" are stored intact.
+        right: list[str] = []
+        _skip_leading = True
+        for _t in tokens[i + 1:]:
+            if _skip_leading and _t in ("the", "an"):
+                continue
+            _skip_leading = False
+            right.append(_t)
         if not left or not right:
             continue
         possessive = left[0] if left[0] in _POSSESSIVE_WORDS else None
@@ -2129,29 +2154,102 @@ def _is_directional_relation(rel: str) -> bool:
     return len(parts) >= 2 and parts[-1] == "to" and parts[0] in _DIRECTIONAL_VERBS
 
 
+def _build_meaning_id_map(facts: list[dict]) -> dict[str, str]:
+    """Build a mapping from every entity name to its canonical Meaning ID (m_id).
+
+    Two entities share the same m_id when they are linked—directly or
+    transitively—by a *be-verb* fact (``is``, ``are``, ``am``, ``was``,
+    ``were``).  For example, if ``Beta is Omega`` then both ``"beta"`` and
+    ``"omega"`` map to the same canonical m_id.
+
+    A Union-Find (disjoint-set) algorithm is used so that chains of
+    identities (``A is B``, ``B is C``) are collapsed into a single
+    canonical representative.  The canonical form is the lexicographically
+    smallest member of each equivalence class, giving a stable, reproducible
+    identifier.
+
+    Returns a ``dict[str, str]`` mapping each lowercase entity name to its
+    lowercase canonical m_id.
+    """
+    parent: dict[str, str] = {}
+
+    def _find(x: str) -> str:
+        if x not in parent:
+            parent[x] = x
+        root = x
+        while parent[root] != root:
+            root = parent[root]
+        # Path compression
+        while parent[x] != root:
+            parent[x], x = root, parent[x]
+        return root
+
+    def _union(x: str, y: str) -> None:
+        px, py = _find(x), _find(y)
+        if px == py:
+            return
+        # Choose the lexicographically smaller name as the canonical root
+        if px < py:
+            parent[py] = px
+        else:
+            parent[px] = py
+
+    # Ensure every subject and value has an entry, then union be-verb pairs
+    for fact in facts:
+        subj = fact.get("subject", "").lower().strip()
+        val  = fact.get("value",   "").lower().strip()
+        if subj:
+            _find(subj)
+        if val:
+            _find(val)
+        if subj and val and fact.get("relation", "").lower() in _BE_VERBS:
+            _union(subj, val)
+
+    return {name: _find(name) for name in parent}
+
+
 def _build_directed_graph(facts: list[dict]) -> dict[str, list[str]]:
     """
-    Build an adjacency list ``{source: [dest, ...]}`` from directional facts.
-    Edges are in insertion order (preserving the order facts were stated).
+    Build an adjacency list ``{source_m_id: [dest_m_id, ...]}`` from
+    directional facts, where each node is identified by its canonical
+    Meaning ID (m_id) rather than its raw string name.
+
+    Using m_ids ensures that entities linked by ``is``/be-verb facts
+    (e.g. ``Beta is Omega``) share the **same** node in the graph.  An
+    edge ``Beta leads to Gamma`` and an edge ``Omega leads to Delta``
+    both originate from the single node that represents *Beta/Omega*.
+
+    Edges are stored in insertion order (preserving the order facts were
+    stated).
     """
+    m_id = _build_meaning_id_map(facts)
     graph: dict[str, list[str]] = {}
     for fact in facts:
         if not _is_directional_relation(fact.get("relation", "")):
             continue
-        src = fact.get("subject", "").lower().strip()
-        dst = fact.get("value",   "").lower().strip()
-        if src and dst:
-            if src not in graph:
-                graph[src] = []
-            if dst not in graph[src]:
-                graph[src].append(dst)
+        src_name = fact.get("subject", "").lower().strip()
+        dst_name = fact.get("value",   "").lower().strip()
+        if not src_name or not dst_name:
+            continue
+        src = m_id.get(src_name, src_name)
+        dst = m_id.get(dst_name, dst_name)
+        if src not in graph:
+            graph[src] = []
+        if dst not in graph[src]:
+            graph[src].append(dst)
     return graph
 
 
 def _find_path(target: str, facts: list[dict]) -> list[str] | None:
     """
-    Return the shortest path (list of node names) that ends at *target*,
-    using BFS over the directed graph built from directional facts.
+    Return the shortest path (list of m_id node names) that ends at the
+    node whose m_id corresponds to *target*, using BFS over the directed
+    graph built from directional facts.
+
+    Because nodes are identified by Meaning IDs (see :func:`_build_meaning_id_map`),
+    entities that are declared equivalent via ``is``/be-verb facts share the
+    same node.  Querying the path to *"Omega"* will therefore reach the same
+    node as querying for *"Beta"* when ``Beta is Omega``.
 
     Exploration starts from the entry-point nodes (nodes that have no
     incoming edges).  Falls back to trying all nodes as starting points
@@ -2159,13 +2257,14 @@ def _find_path(target: str, facts: list[dict]) -> list[str] | None:
 
     Returns ``None`` if no path exists.
     """
+    m_id = _build_meaning_id_map(facts)
     graph = _build_directed_graph(facts)
     if not graph:
         return None
 
-    target_lower = target.lower().strip()
+    target_id = m_id.get(target.lower().strip(), target.lower().strip())
 
-    # Identify entry points (no incoming edges)
+    # Identify entry points (nodes with no incoming edges)
     all_dests: set[str] = {dst for dsts in graph.values() for dst in dsts}
     entries = [n for n in graph if n not in all_dests]
     if not entries:
@@ -2180,7 +2279,7 @@ def _find_path(target: str, facts: list[dict]) -> list[str] | None:
         while q:
             path = q.popleft()
             node = path[-1]
-            if node == target_lower:
+            if node == target_id:
                 return path
             if node in visited:
                 continue
@@ -2245,7 +2344,7 @@ def _try_answer_question(tokens: list[str], facts: list[dict]) -> str | None:
 
         if nxt == "to":
             # "path to X"
-            target_toks = [t for t in tokens[path_idx + 2:] if t not in _SKIP_WORDS]
+            target_toks = _strip_leading_articles(tokens[path_idx + 2:])
             if target_toks:
                 target = " ".join(target_toks)
                 path = _find_path(target, facts)
@@ -2263,8 +2362,8 @@ def _try_answer_question(tokens: list[str], facts: list[dict]) -> str | None:
                     to_idx = k
                     break
             if to_idx > from_start:
-                start_toks  = [t for t in tokens[from_start:to_idx] if t not in _SKIP_WORDS]
-                target_toks = [t for t in tokens[to_idx + 1:]       if t not in _SKIP_WORDS]
+                start_toks  = _strip_leading_articles(tokens[from_start:to_idx])
+                target_toks = _strip_leading_articles(tokens[to_idx + 1:])
                 if start_toks and target_toks:
                     start  = " ".join(start_toks)
                     target = " ".join(target_toks)
@@ -2283,7 +2382,7 @@ def _try_answer_question(tokens: list[str], facts: list[dict]) -> str | None:
     if q_word is not None and q_idx + 2 < len(tokens):
         nxt = tokens[q_idx + 1]
         if nxt in _DIRECTIONAL_VERBS and tokens[q_idx + 2] == "to":
-            val_toks = [t for t in tokens[q_idx + 3:] if t not in _SKIP_WORDS]
+            val_toks = _strip_leading_articles(tokens[q_idx + 3:])
             if val_toks:
                 target_val = " ".join(val_toks)
                 rel        = f"{nxt} to"
@@ -2310,10 +2409,10 @@ def _try_answer_question(tokens: list[str], facts: list[dict]) -> str | None:
             # Check for multi-word relation
             if len(rest) >= 4 and (rest[1], rest[2]) in _MULTI_WORD_RELATIONS:
                 yn_rel      = _MULTI_WORD_RELATIONS[(rest[1], rest[2])]
-                yn_val_toks = [t for t in rest[3:] if t not in _SKIP_WORDS]
+                yn_val_toks = _strip_leading_articles(rest[3:])
             else:
                 yn_rel      = _canonical_rel(rest[1])
-                yn_val_toks = [t for t in rest[2:] if t not in _SKIP_WORDS]
+                yn_val_toks = _strip_leading_articles(rest[2:])
 
             if yn_rel and yn_val_toks:
                 yn_val = " ".join(yn_val_toks)
@@ -2354,7 +2453,7 @@ def _try_answer_question(tokens: list[str], facts: list[dict]) -> str | None:
         aux = tokens[q_idx + 1]
         if aux in {"does", "do", "did"}:
             after_aux = tokens[q_idx + 2:]
-            subj_cands = [t for t in after_aux if t not in _SKIP_WORDS]
+            subj_cands = _strip_leading_articles(after_aux)
             if subj_cands:
                 wdoes_subj = subj_cands[0]
                 # tokens after subject
@@ -2409,7 +2508,7 @@ def _try_answer_question(tokens: list[str], facts: list[dict]) -> str | None:
         return None
 
     # Everything after the relation word is the subject being asked about
-    subject_tokens = [t for t in tokens[a_idx + 1:] if t not in _SKIP_WORDS]
+    subject_tokens = _strip_leading_articles(tokens[a_idx + 1:])
     if not subject_tokens:
         return None
 
