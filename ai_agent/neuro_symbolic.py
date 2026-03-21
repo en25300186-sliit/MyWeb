@@ -2566,6 +2566,12 @@ def process_input(text: str, facts: list[dict] | None = None,
         else:
             fact = _extract_fact_from_tokens(tokens)
             if fact is not None:
+                # Automatically evaluate derived-fact values using variables
+                # already known in *facts* (e.g. "Ratio is A divided by B"
+                # with A=10, B=20 → stored as ratio=0.5).
+                evaluated_value = _evaluate_expression_value(fact["value"], facts)
+                if evaluated_value != fact["value"]:
+                    fact = {**fact, "value": evaluated_value}
                 facts.append(fact)
                 new_facts.append(fact)
 
