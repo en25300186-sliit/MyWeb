@@ -1406,6 +1406,46 @@ _HYPO_TRIGGERS: frozenset = frozenset({
 })
 
 
+# ---------------------------------------------------------------------------
+# Variable-resolution helpers (math engine ↔ memory integration)
+# ---------------------------------------------------------------------------
+
+def _numeric_value_from_facts(name: str, facts: list[dict]) -> float | None:
+    """Return the numeric value assigned to *name* in *facts*, or ``None``.
+
+    Iterates *facts* in reverse so the most recent assignment wins (supports
+    hypothetical overrides).  Only ``is``/``=``/``equals`` relations whose
+    stored value is a plain number are considered.
+    """
+    key = name.lower().strip()
+    for fact in reversed(facts):
+        if fact.get("subject", "").lower() != key:
+            continue
+        if fact.get("relation", "").lower() not in ("is", "=", "equals"):
+            continue
+        val = fact.get("value", "")
+        if _is_num(str(val)):
+            return float(val)
+    return None
+
+
+def _resolve_variables(tokens: list[str], facts: list[dict]) -> list[str]:
+    """Replace known numeric variable names in *tokens* with their values.
+
+    Any token whose lowercase form matches a subject with a numeric ``is``
+    assignment in *facts* is substituted with the formatted numeric string.
+    All other tokens are returned unchanged.
+    """
+    result: list[str] = []
+    for tok in tokens:
+        num = _numeric_value_from_facts(tok, facts)
+        if num is not None:
+            result.append(_fmt_num(num))
+        else:
+            result.append(tok)
+    return result
+
+
 def _try_solve_linear(tokens: list[str]) -> str | None:
     """Attempt to solve a simple linear equation of the form ``aX ± b = c``.
 
@@ -1634,7 +1674,8 @@ def _try_evaluate_advanced_math(tokens: list[str]) -> str | None:
     return None
 
 
-def _try_evaluate_math_question(tokens: list[str]) -> str | None:
+def _try_evaluate_math_question(tokens: list[str],
+                                facts: list[dict] | None = None) -> str | None:
     """
     Detect and evaluate an arithmetic or mathematical expression in *tokens*.
 
@@ -1645,9 +1686,15 @@ def _try_evaluate_math_question(tokens: list[str]) -> str | None:
     - Square root: ``square root of 16``
     - Powers: ``2 to the power of 8``, ``2 ^ 8``
     - Advanced: trig, log, factorial, GCD/LCM, combinations, percentages, etc.
+    - Variable names resolved from *facts* (e.g. ``A`` → ``10`` if A is 10).
+      Supports N-operand sums/products: ``total of A and B and C``.
 
     Returns a formatted answer string, or ``None`` if no arithmetic found.
     """
+    # -- Resolve variable names from session facts ----------------------------
+    if facts:
+        tokens = _resolve_variables(tokens, facts)
+
     # -- Advanced math first (trig, log, factorial, etc.) -------------------
     adv = _try_evaluate_advanced_math(tokens)
     if adv is not None:
@@ -1693,7 +1740,7 @@ def _try_evaluate_math_question(tokens: list[str]) -> str | None:
             return (f"{_fmt_num(base_n)} to the power of {_fmt_num(exp_n)} "
                     f"is {_fmt_num(result)}.")
 
-    # -- Named operations: "sum of X and Y" ----------------------------------
+    # -- Named operations: "sum/total of X and Y [and Z …]" -----------------
     for i, tok in enumerate(tokens):
         if tok in _NAMED_MATH_OPS:
             op_sym = _NAMED_MATH_OPS[tok]
@@ -1704,9 +1751,20 @@ def _try_evaluate_math_question(tokens: list[str]) -> str | None:
                 except ValueError:
                     pass
             if len(nums) >= 2:
-                a, b = nums[0], nums[1]
-                if op_sym == "/" and b == 0:
+                if op_sym == "/" and nums[1] == 0:
                     return "Division by zero is undefined."
+                # Accumulate all operands for associative ops (+ and *)
+                if op_sym == "+" and len(nums) > 2:
+                    r = sum(nums)
+                    parts = " + ".join(_fmt_num(n) for n in nums)
+                    return f"The {tok} of {parts} is {_fmt_num(r)}."
+                if op_sym == "*" and len(nums) > 2:
+                    r = 1.0
+                    for n in nums:
+                        r *= n
+                    parts = " × ".join(_fmt_num(n) for n in nums)
+                    return f"The {tok} of {parts} is {_fmt_num(r)}."
+                a, b = nums[0], nums[1]
                 op_fns = {"+": a + b, "*": a * b, "-": a - b, "/": a / b}
                 r = op_fns[op_sym]
                 return f"The {tok} of {_fmt_num(a)} and {_fmt_num(b)} is {_fmt_num(r)}."
@@ -1738,6 +1796,28 @@ def _try_evaluate_math_question(tokens: list[str]) -> str | None:
         return None
     display = expr_str.replace(" ** ", "^").replace("**", "^")
     return f"{display} = {_fmt_num(result)}"
+
+
+def _evaluate_expression_value(value: str, facts: list[dict]) -> str:
+    """Evaluate a stored fact value that may be a math expression with variables.
+
+    If *value* contains tokens that resolve to known numeric variables and
+    form a valid arithmetic expression, returns the computed result as a
+    string.  Otherwise returns *value* unchanged.
+
+    This is used to evaluate derived facts such as ``"a divided by b"`` when
+    A=10 and B=20 are known, yielding ``"0.5"``.
+    """
+    vtokens = _tokenize(value)
+    resolved = _resolve_variables(vtokens, facts)
+    if resolved == vtokens:
+        return value  # no variables were substituted – nothing to evaluate
+    result = _try_evaluate_math_question(resolved)  # no facts: already resolved
+    if result is not None:
+        m = re.search(r'=\s*([-+\d.]+(?:\.\d*)?)\s*\.?$', result)
+        if m and _is_num(m.group(1)):
+            return m.group(1)
+    return value
 
 
 # ---------------------------------------------------------------------------
@@ -1773,7 +1853,13 @@ def _try_imagine_hypothetical(tokens: list[str], facts: list[dict]) -> str | Non
             if pre_to and post_to:
                 to1_idx = pre_to[-1]
                 to2_idx = post_to[0]
-                _skip = {"is", "are", "the", "a", "an", "?"}
+                # Don't skip single-letter tokens that are known numeric
+                # variables (e.g. "a" when A=10 is in facts).
+                _known_num_vars = {
+                    f.get("subject", "").lower() for f in facts
+                    if _is_num(str(f.get("value", "")))
+                }
+                _skip = {"is", "are", "the", "an", "?"} | ({"a"} - _known_num_vars)
                 a_toks = [t for t in tokens[:to1_idx]           if t not in _skip]
                 b_toks = [t for t in tokens[to1_idx + 1:as_idx] if t not in _skip]
                 c_toks = [t for t in tokens[as_idx + 1:to2_idx] if t not in _skip]
@@ -1781,17 +1867,22 @@ def _try_imagine_hypothetical(tokens: list[str], facts: list[dict]) -> str | Non
                     a_str = " ".join(a_toks)
                     b_str = " ".join(b_toks)
                     c_str = " ".join(c_toks)
-                    # Numeric analogy (ratio)
-                    try:
-                        na, nb, nc = float(a_str), float(b_str), float(c_str)
-                        if na != 0:
-                            ratio = nb / na
-                            answer = nc * ratio
-                            return (f"By proportion: {_fmt_num(na)} is to "
-                                    f"{_fmt_num(nb)} (ratio {_fmt_num(ratio)}) "
-                                    f"as {_fmt_num(nc)} is to {_fmt_num(answer)}.")
-                    except ValueError:
-                        pass
+                    # Numeric analogy (ratio) – resolve variable names via facts
+                    def _coerce_num(s: str) -> float | None:
+                        try:
+                            return float(s)
+                        except ValueError:
+                            return _numeric_value_from_facts(s, facts)
+
+                    na = _coerce_num(a_str)
+                    nb = _coerce_num(b_str)
+                    nc = _coerce_num(c_str)
+                    if na is not None and nb is not None and nc is not None and na != 0:
+                        ratio = nb / na
+                        answer = nc * ratio
+                        return (f"By proportion: {_fmt_num(na)} is to "
+                                f"{_fmt_num(nb)} (ratio {_fmt_num(ratio)}) "
+                                f"as {_fmt_num(nc)} is to {_fmt_num(answer)}.")
                     # Symbolic analogy: find relation a→b in facts
                     rel_found: str | None = None
                     for f in facts:
@@ -1912,6 +2003,10 @@ def _extract_fact_from_tokens(tokens: list[str]) -> dict | None:
     (e.g. ``"car's"``) is split into owner + attribute so that
     "my car's color is red" yields
     ``{possessive:"my", subject:"car", attribute:"color", relation:"is", value:"red"}``.
+
+    Single-letter variable names such as ``a``, ``b``, ``c`` that happen to
+    coincide with the article "a" are preserved on the *left* side when they
+    are the sole token (e.g. "A is 10" → subject "a").
     """
     # -- Multi-word relation detection (highest priority) --------------------
     for i, tok in enumerate(tokens):
@@ -1921,7 +2016,11 @@ def _extract_fact_from_tokens(tokens: list[str]) -> dict | None:
         if pair not in _MULTI_WORD_RELATIONS:
             continue
         relation = _MULTI_WORD_RELATIONS[pair]
-        left  = [t for t in tokens[:i]      if t not in _SKIP_WORDS]
+        raw_left  = tokens[:i]
+        left  = [t for t in raw_left  if t not in _SKIP_WORDS]
+        # Preserve standalone "a" as a variable name (not an article)
+        if not left and raw_left == ["a"]:
+            left = ["a"]
         right = [t for t in tokens[i + 2:]  if t not in _SKIP_WORDS]
         if not left or not right:
             continue
@@ -1941,8 +2040,15 @@ def _extract_fact_from_tokens(tokens: list[str]) -> dict | None:
     for i, tok in enumerate(tokens):
         if tok not in _ASSIGNMENT_WORDS:
             continue
-        left = [t for t in tokens[:i] if t not in _SKIP_WORDS]
-        right = [t for t in tokens[i + 1:] if t not in _SKIP_WORDS]
+        raw_left = tokens[:i]
+        left = [t for t in raw_left if t not in _SKIP_WORDS]
+        # Preserve standalone "a" as a variable name (not an article)
+        if not left and raw_left == ["a"]:
+            left = ["a"]
+        # Right side: keep "a" so that "ratio is a divided by b" is stored
+        # with the full expression; this enables expression evaluation later.
+        right = [t for t in tokens[i + 1:]
+                 if t not in (_SKIP_WORDS - {"a"})]
         if not left or not right:
             continue
         possessive = left[0] if left[0] in _POSSESSIVE_WORDS else None
@@ -2211,11 +2317,20 @@ def _try_answer_question(tokens: list[str], facts: list[dict]) -> str | None:
 
             if yn_rel and yn_val_toks:
                 yn_val = " ".join(yn_val_toks)
-                # Direct check
+                # Direct check (also matches stored values that include leading
+                # article "a"/"an", e.g. "a dog" matches query "dog")
+                def _yn_values_match(stored: str, queried: str) -> bool:
+                    if stored.lower() == queried.lower():
+                        return True
+                    # Normalise by stripping a leading article
+                    _s = re.sub(r'^(?:a|an|the)\s+', '', stored.lower().strip())
+                    _q = re.sub(r'^(?:a|an|the)\s+', '', queried.lower().strip())
+                    return _s == _q
+
                 direct = any(
                     fact.get("subject", "").lower() == yn_subject.lower()
                     and _rel_match_global(fact.get("relation", ""), yn_rel)
-                    and fact.get("value", "").lower() == yn_val.lower()
+                    and _yn_values_match(fact.get("value", ""), yn_val)
                     for fact in facts
                 )
                 if direct:
@@ -2264,7 +2379,7 @@ def _try_answer_question(tokens: list[str], facts: list[dict]) -> str | None:
     # ----------------------------------------------------------------
     # 3. Mathematical question: "What is 5 + 3?", "How much is 10 * 2?"
     # ----------------------------------------------------------------
-    math_answer = _try_evaluate_math_question(tokens)
+    math_answer = _try_evaluate_math_question(tokens, facts)
     if math_answer is not None:
         return math_answer
 
