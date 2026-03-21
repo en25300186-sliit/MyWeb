@@ -277,5 +277,12 @@ def neuro_symbolic_process(request):
         request.session.modified = True
         return JsonResponse({'ok': True, 'facts': []})
 
+    elif action == 'neural_associations':
+        word = body.get('word', '').strip()
+        if not word:
+            return JsonResponse({'error': 'No word provided.'}, status=400)
+        result = engine.neural_associations(word)
+        return JsonResponse({'ok': True, 'result': result})
+
     else:
         return JsonResponse({'error': f'Unknown action: {action!r}'}, status=400)

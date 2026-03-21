@@ -1,14 +1,26 @@
 """
 Neuro-Symbolic AI module for EngiHub.
 
-Provides a symbolic language understanding engine with:
+Provides a hybrid neuro-symbolic language understanding engine with:
 - Core data structures (UniObject, UniOperator, UniPronoun, UniAssignment,
   UniConnection, UniAction, UniSyntax, UniBase).
+- NeuralAssociation: a lightweight neural layer for every UniObject's
+  ``connections`` (forward edges) and ``reverse_connections`` (backward edges).
+  Associations are weighted (Hebbian-style learning) and support a sigmoid
+  forward-pass so the graph behaves as a small neural network.
+- Each UniObject carries its own ``memory`` dict that records every
+  relation/value pair learned during a session.
 - Built-in operators with logic (AND, OR, NOT, IF, +, -, *, /, ==, >, <, …).
 - Built-in assignments with logic (is, =, has, contains, belongs, …).
 - Built-in pronouns with logic (it, this, that, he, she, they, …).
-- A language phraser (parse_sentence / evaluate_sentence) that converts natural
-  language sentences into a symbolic UniConnection graph.
+- Extended mathematical reasoning: arithmetic, trig, logarithms, factorial,
+  GCD/LCM, combinations, permutations, percentages, rounding, floor/ceil,
+  absolute value, and simple linear-equation solving.
+- Imagination / hypothetical reasoning: "what if X is Y?", analogy
+  ("A is to B as C is to ?"), and counterfactual inference.
+- A language phraser (parse_sentence / evaluate_sentence) that converts
+  natural-language sentences into a symbolic UniConnection graph annotated
+  with neural activation strengths.
 """
 
 from __future__ import annotations
@@ -17,7 +29,6 @@ import ast as _ast
 import math as _math
 import operator as _op_module
 import re
-from array import array
 from collections import deque
 from dataclasses import dataclass, field
 from enum import IntEnum
@@ -28,8 +39,123 @@ from typing import Callable
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _new_id_array() -> array:
-    return array("B")
+def _sigmoid(x: float) -> float:
+    """Sigmoid activation function: maps any real to (0, 1)."""
+    try:
+        return 1.0 / (1.0 + _math.exp(-x))
+    except OverflowError:
+        return 0.0 if x < 0 else 1.0
+
+
+# ---------------------------------------------------------------------------
+# NeuralAssociation – neural layer for UniObject connections
+# ---------------------------------------------------------------------------
+
+class NeuralAssociation:
+    """Lightweight neural association layer for a single node.
+
+    Replaces the plain ``list`` / byte-``array`` previously used for
+    ``connections`` and ``reverse_connections`` on :class:`UniObject`.
+
+    Each association is a weighted edge (label → strength ∈ [0, 1]).
+    Learning uses Hebbian-style reinforcement: repeated co-activation
+    gradually strengthens the weight toward 1.0.
+
+    A sigmoid forward-pass (``activate``) converts weights and external
+    input activations into output activations, giving this component its
+    neural character.
+    """
+
+    __slots__ = ("_weights", "_bias")
+
+    def __init__(self) -> None:
+        self._weights: dict[str, float] = {}
+        self._bias: float = 0.0
+
+    # ------------------------------------------------------------------
+    # Learning
+    # ------------------------------------------------------------------
+
+    def connect(self, target: str, weight: float = 0.5) -> None:
+        """Add or strengthen a weighted connection to *target*.
+
+        If *target* already exists, the weight is reinforced via
+        ``w ← w + 0.1 × (1 − w)`` (asymptotic Hebbian update).
+        """
+        key = target.lower()
+        if key in self._weights:
+            self._weights[key] = min(1.0, self._weights[key] + 0.1 * (1.0 - self._weights[key]))
+        else:
+            self._weights[key] = max(0.0, min(1.0, weight))
+
+    # ------------------------------------------------------------------
+    # Inspection
+    # ------------------------------------------------------------------
+
+    def has(self, target: str) -> bool:
+        """Return *True* if *target* is a connected node."""
+        return target.lower() in self._weights
+
+    def weight(self, target: str) -> float:
+        """Return the association weight for *target* (0.0 if absent)."""
+        return self._weights.get(target.lower(), 0.0)
+
+    def nodes(self) -> list[str]:
+        """Return all connected node labels."""
+        return list(self._weights.keys())
+
+    def top_k(self, k: int = 5) -> list[tuple[str, float]]:
+        """Return the *k* strongest connections as ``(label, weight)`` pairs."""
+        return sorted(self._weights.items(), key=lambda x: x[1], reverse=True)[:k]
+
+    # ------------------------------------------------------------------
+    # Neural forward pass
+    # ------------------------------------------------------------------
+
+    def activate(self, inputs: dict[str, float] | None = None) -> dict[str, float]:
+        """Compute activations for all connected nodes.
+
+        If *inputs* is provided each node's activation is
+        ``sigmoid(weight × input_activation + bias)``.
+        Without *inputs*, the raw weights are returned directly.
+        """
+        if inputs is None:
+            return dict(self._weights)
+        return {
+            target: _sigmoid(w * inputs.get(target, 0.0) + self._bias)
+            for target, w in self._weights.items()
+        }
+
+    # ------------------------------------------------------------------
+    # Serialisation
+    # ------------------------------------------------------------------
+
+    def to_dict(self) -> dict:
+        return {"weights": dict(self._weights), "bias": self._bias}
+
+    def load_dict(self, data: dict) -> None:
+        self._weights = {str(k): float(v) for k, v in data.get("weights", {}).items()}
+        self._bias = float(data.get("bias", 0.0))
+
+    # ------------------------------------------------------------------
+    # Compatibility shims (so ``x in assoc`` still works)
+    # ------------------------------------------------------------------
+
+    def __contains__(self, item: object) -> bool:
+        if isinstance(item, str):
+            return self.has(item)
+        return False
+
+    def __iter__(self):
+        return iter(self._weights.keys())
+
+    def __len__(self) -> int:
+        return len(self._weights)
+
+    def __repr__(self) -> str:
+        top = self.top_k(3)
+        pairs = ", ".join(f"{k}:{v:.2f}" for k, v in top)
+        return f"NeuralAssociation({pairs})"
 
 
 # ---------------------------------------------------------------------------
@@ -59,8 +185,8 @@ class ArgsEnding(IntEnum):
 @dataclass(slots=True, frozen=True)
 class UniObject:
     word: str = ""
-    connections: list = field(default_factory=list)
-    reverse_connections: array = field(default_factory=_new_id_array)
+    connections: NeuralAssociation = field(default_factory=NeuralAssociation)
+    reverse_connections: NeuralAssociation = field(default_factory=NeuralAssociation)
     type: int = UniTypes.UNIOBJECT
     logic: Callable = None
     memory: dict = field(default_factory=dict)
@@ -159,7 +285,10 @@ class UniBase:
 
     def filter(self, word: str, connection):
         for item in self.items[word.lower()]:
-            if connection in item.connections:
+            if isinstance(item, UniObject):
+                if item.connections.has(str(connection)):
+                    yield item
+            elif hasattr(item, "connections") and connection in item.connections:
                 yield item
 
 
@@ -548,9 +677,29 @@ _OPERATOR_TYPES = frozenset({
 
 
 def _tokenize(text: str) -> list[str]:
-    """Split *text* on whitespace, preserving punctuation as separate tokens."""
-    tokens = re.findall(r"[\w']+|[+\-*/=!<>(),.!?]", text)
-    return [t.lower() for t in tokens]
+    """Split *text* on whitespace, preserving punctuation as separate tokens.
+
+    Decimal numbers (e.g. ``3.14``) are kept as a single token.
+    Negative number literals (e.g. ``-7``) preceded directly by a minus sign
+    are also combined into a single token when the minus is not immediately
+    preceded by a digit (to avoid splitting subtraction expressions).
+    """
+    tokens = re.findall(r"\d+\.\d+|[\w']+|[+\-*/=!<>(),.!?]", text)
+    # Combine leading minus with immediately following numeric token
+    merged: list[str] = []
+    i = 0
+    while i < len(tokens):
+        tok = tokens[i]
+        if (tok == "-"
+                and i + 1 < len(tokens)
+                and re.fullmatch(r"\d+(?:\.\d+)?", tokens[i + 1])
+                and (not merged or not re.fullmatch(r"\d+(?:\.\d+)?", merged[-1]))):
+            merged.append("-" + tokens[i + 1])
+            i += 2
+        else:
+            merged.append(tok)
+            i += 1
+    return [t.lower() for t in merged]
 
 
 def _classify_token(token: str, base: UniBase) -> UniItem:
@@ -711,6 +860,37 @@ def evaluate_sentence(text: str, base: UniBase | None = None) -> dict:
                     })
                     break
 
+    # Collect neural activations for object/pronoun tokens in the sentence
+    neural_activations: list[dict] = []
+    if base is None:
+        base = _GLOBAL_BASE
+    seen_neural: set[str] = set()
+    for c in result.classified:
+        if c["type"] not in ("UNIOBJECT", "UNIPRONOUN"):
+            continue
+        tok = c["token"]
+        if tok in seen_neural:
+            continue
+        seen_neural.add(tok)
+        items = base.items.get(tok, ())
+        for item in items:
+            if isinstance(item, UniObject) and (
+                len(item.connections) > 0 or len(item.reverse_connections) > 0
+            ):
+                neural_activations.append({
+                    "word": tok,
+                    "top_connections": [
+                        {"target": t, "weight": round(w, 4)}
+                        for t, w in item.connections.top_k(5)
+                    ],
+                    "top_reverse_connections": [
+                        {"target": t, "weight": round(w, 4)}
+                        for t, w in item.reverse_connections.top_k(5)
+                    ],
+                    "memory_keys": list(item.memory.keys())[:10],
+                })
+                break
+
     return {
         "input": text,
         "tokens": result.tokens,
@@ -723,6 +903,7 @@ def evaluate_sentence(text: str, base: UniBase | None = None) -> dict:
             for c in result.connections
         ],
         "evaluations": evaluations,
+        "neural_activations": neural_activations,
     }
 
 
@@ -787,6 +968,12 @@ _ASSIGNMENT_WORDS: frozenset = frozenset({
 
 # WH-question words recognised by the Q&A engine.
 _QUESTION_WORDS: frozenset = frozenset({"what", "where", "when", "who", "whom", "why", "how", "which"})
+
+# Math/computation commands that implicitly make a sentence a question.
+_MATH_QUESTION_STARTERS: frozenset = frozenset({
+    "solve", "calculate", "compute", "find", "simplify", "evaluate",
+    "round", "floor", "ceil", "ceiling", "factorial",
+})
 
 # Possessive determiners: these precede a noun to indicate ownership.
 # e.g. "my name", "your car", "his book"
@@ -1112,6 +1299,7 @@ _TEXT_TO_MATH_SYM: dict[str, str] = {
     "minus": "-", "subtract": "-",
     "times": "*", "multiply": "*", "multiplied": "*",
     "divided": "/", "divide": "/",
+    "mod": "%", "modulo": "%", "remainder": "%",
 }
 
 
@@ -1132,6 +1320,15 @@ def _fmt_num(n: int | float) -> str:
         return str(n)
     except Exception:
         return str(n)
+
+
+def _is_num(s: str) -> bool:
+    """Return *True* if *s* can be parsed as a float."""
+    try:
+        float(s)
+        return True
+    except (ValueError, TypeError):
+        return False
 
 
 def _safe_eval_math(expr: str):
@@ -1181,9 +1378,265 @@ def _safe_eval_math(expr: str):
         return None
 
 
+# Trigonometric function registry (name → (callable, expects_radians))
+_TRIG_REGISTRY: dict[str, tuple] = {
+    "sin":    (_math.sin,  True),
+    "cos":    (_math.cos,  True),
+    "tan":    (_math.tan,  True),
+    "asin":   (_math.asin, False),
+    "arcsin": (_math.asin, False),
+    "acos":   (_math.acos, False),
+    "arccos": (_math.acos, False),
+    "atan":   (_math.atan, False),
+    "arctan": (_math.atan, False),
+    "sinh":   (_math.sinh, False),
+    "cosh":   (_math.cosh, False),
+    "tanh":   (_math.tanh, False),
+}
+
+# Compiled regex for single-letter variable detection in linear equations.
+# Supports only single-letter variables (e.g. "x", "y") — multi-character
+# identifiers are intentionally excluded to avoid false positives.
+_LINEAR_VAR_RE = re.compile(r'(?<![a-z])([a-z])(?![a-z])')
+
+# Hypothesis / imagination triggers – words that start a hypothetical clause.
+_HYPO_TRIGGERS: frozenset = frozenset({
+    "imagine", "suppose", "hypothetically",
+    "pretend", "assume", "consider",
+})
+
+
+def _try_solve_linear(tokens: list[str]) -> str | None:
+    """Attempt to solve a simple linear equation of the form ``aX ± b = c``.
+
+    Supports only single-letter variables (e.g. ``x``, ``y``).
+
+    Recognises patterns such as:
+    - "solve 2x + 3 = 7"
+    - "what is x if 2x = 10"
+    - "x + 5 = 12"
+    """
+    expr = " ".join(tokens)
+    if "=" not in expr:
+        return None
+    var_match = _LINEAR_VAR_RE.search(expr.lower())
+    if not var_match:
+        return None
+    var = var_match.group(1)
+    eq_parts = expr.split("=")
+    if len(eq_parts) < 2:
+        return None
+    lhs_str = eq_parts[-2].strip()
+    rhs_str = eq_parts[-1].strip()
+    rhs_nums = [t for t in rhs_str.split() if _is_num(t)]
+    if not rhs_nums:
+        return None
+    rhs = float(rhs_nums[0])
+    coef_match = re.search(r'([-+]?\s*\d*\.?\d*)\s*' + var, lhs_str.lower())
+    if not coef_match:
+        return None
+    coef_raw = coef_match.group(1).replace(" ", "")
+    if coef_raw in ("", "+"):
+        coef = 1.0
+    elif coef_raw == "-":
+        coef = -1.0
+    else:
+        try:
+            coef = float(coef_raw)
+        except ValueError:
+            return None
+    lhs_no_var = re.sub(r'([-+]?\s*\d*\.?\d*)\s*' + var, '', lhs_str.lower()).strip()
+    const = 0.0
+    for m in re.finditer(r'([-+]?\s*\d+\.?\d*)', lhs_no_var):
+        try:
+            const += float(m.group(1).replace(" ", ""))
+        except ValueError:
+            pass
+    if coef == 0:
+        return None
+    solution = (rhs - const) / coef
+    return f"{var} = {_fmt_num(solution)}"
+
+
+def _try_evaluate_advanced_math(tokens: list[str]) -> str | None:
+    """Extended mathematical reasoning beyond basic arithmetic.
+
+    Handles:
+    - Trigonometry: sin/cos/tan/asin/acos/atan (degrees or radians)
+    - Logarithms:   log, log base B, natural log (ln)
+    - Factorial:    "factorial of N", "N!"
+    - GCD / LCM:    "gcd of 12 and 8", "lcm of 4 and 6"
+    - Combinations: "5 choose 2", "C(5,2)"
+    - Permutations: "permutations of 5 take 2"
+    - Percentage:   "20 percent of 150"
+    - Absolute:     "abs of -5", "absolute value of -7"
+    - Floor/ceil:   "floor of 3.7", "ceiling of 3.2"
+    - Rounding:     "round 3.14159 to 2 decimal places"
+    - Linear eq:    "solve 2x + 3 = 7"
+
+    Returns a formatted answer string, or ``None`` if no pattern matched.
+    """
+    # -- Trigonometry --------------------------------------------------------
+    for name, (fn, needs_degrees) in _TRIG_REGISTRY.items():
+        if name in tokens:
+            idx = tokens.index(name)
+            start = idx + 1
+            if start < len(tokens) and tokens[start] == "of":
+                start += 1
+            for j in range(start, len(tokens)):
+                if not _is_num(tokens[j]):
+                    continue
+                deg = float(tokens[j])
+                # Detect "degrees" / "radians" qualifier
+                is_rad = (j + 1 < len(tokens) and
+                          tokens[j + 1] in ("radians", "rad", "radian"))
+                unit = "radians" if is_rad else "degrees"
+                rad = deg if is_rad else _math.radians(deg)
+                try:
+                    r = fn(rad)
+                except (ValueError, ZeroDivisionError):
+                    return f"{name}({_fmt_num(deg)} {unit}) is undefined."
+                return f"{name}({_fmt_num(deg)} {unit}) = {_fmt_num(r)}"
+
+    # -- Logarithms ----------------------------------------------------------
+    want_log = "log" in tokens or "logarithm" in tokens or "ln" in tokens
+    want_nat = "natural" in tokens or "ln" in tokens
+    if want_log or want_nat:
+        if want_nat:
+            for tok in tokens:
+                if _is_num(tok):
+                    n = float(tok)
+                    if n <= 0:
+                        return "The natural logarithm is only defined for positive numbers."
+                    return f"ln({_fmt_num(n)}) = {_fmt_num(_math.log(n))}"
+        if "base" in tokens and "log" in tokens:
+            try:
+                b_idx = tokens.index("base")
+                if _is_num(tokens[b_idx + 1]):
+                    base_n = float(tokens[b_idx + 1])
+                    rest_nums = [float(t) for t in tokens[b_idx + 2:] if _is_num(t)]
+                    if rest_nums:
+                        x = rest_nums[0]
+                        if x <= 0 or base_n <= 0 or base_n == 1:
+                            return "Logarithm is undefined for those inputs."
+                        return (f"log base {_fmt_num(base_n)} of {_fmt_num(x)} "
+                                f"= {_fmt_num(_math.log(x, base_n))}")
+            except (IndexError, ValueError):
+                pass
+        # Default: log base 10
+        for tok in tokens:
+            if _is_num(tok):
+                n = float(tok)
+                if n <= 0:
+                    return "Logarithm is only defined for positive numbers."
+                return f"log₁₀({_fmt_num(n)}) = {_fmt_num(_math.log10(n))}"
+
+    # -- Factorial -----------------------------------------------------------
+    if "factorial" in tokens or (len(tokens) >= 1 and tokens[-1] == "!"):
+        nums = [float(t) for t in tokens if _is_num(t)]
+        if nums:
+            n = nums[0]
+            if n < 0 or n != int(n):
+                return "Factorial is only defined for non-negative integers."
+            if n > 170:
+                return f"{int(n)}! overflows floating-point range (max is 170)."
+            return f"{int(n)}! = {_math.factorial(int(n))}"
+
+    # -- GCD -----------------------------------------------------------------
+    if "gcd" in tokens or ("greatest" in tokens and "common" in tokens):
+        nums = [int(float(t)) for t in tokens if _is_num(t)]
+        if len(nums) >= 2:
+            return f"gcd({nums[0]}, {nums[1]}) = {_math.gcd(nums[0], nums[1])}"
+
+    # -- LCM -----------------------------------------------------------------
+    if "lcm" in tokens or ("least" in tokens and "common" in tokens):
+        nums = [int(float(t)) for t in tokens if _is_num(t)]
+        if len(nums) >= 2:
+            g = _math.gcd(nums[0], nums[1])
+            lcm_val = abs(nums[0] * nums[1]) // g if g else 0
+            return f"lcm({nums[0]}, {nums[1]}) = {lcm_val}"
+
+    # -- Combinations --------------------------------------------------------
+    if "choose" in tokens:
+        idx = tokens.index("choose")
+        left_nums  = [float(t) for t in tokens[:idx] if _is_num(t)]
+        right_nums = [float(t) for t in tokens[idx + 1:] if _is_num(t)]
+        if left_nums and right_nums:
+            n, r = int(left_nums[-1]), int(right_nums[0])
+            if r < 0 or r > n:
+                return f"C({n}, {r}) = 0"
+            return f"C({n}, {r}) = {_math.comb(n, r)}"
+
+    # -- Permutations --------------------------------------------------------
+    if "permutations" in tokens or "permute" in tokens:
+        nums = [int(float(t)) for t in tokens if _is_num(t)]
+        if len(nums) >= 2:
+            n, r = nums[0], nums[1]
+            if r < 0 or r > n:
+                return f"P({n}, {r}) = 0"
+            return f"P({n}, {r}) = {_math.perm(n, r)}"
+
+    # -- Percentage ----------------------------------------------------------
+    if "percent" in tokens or "%" in tokens:
+        pct_nums = []
+        for t in tokens:
+            raw = t.rstrip("%")
+            if _is_num(raw):
+                pct_nums.append(float(raw))
+        if len(pct_nums) >= 2:
+            pct, base = pct_nums[0], pct_nums[1]
+            return f"{_fmt_num(pct)}% of {_fmt_num(base)} = {_fmt_num(pct / 100.0 * base)}"
+
+    # -- Absolute value ------------------------------------------------------
+    if "abs" in tokens or "absolute" in tokens:
+        for tok in tokens:
+            if tok in ("abs", "absolute", "value", "of", "the"):
+                continue
+            if _is_num(tok):
+                n = float(tok)
+                return f"|{_fmt_num(n)}| = {_fmt_num(abs(n))}"
+
+    # -- Floor / ceiling -----------------------------------------------------
+    if "floor" in tokens:
+        for tok in tokens:
+            if tok in ("floor", "of", "the"):
+                continue
+            if _is_num(tok):
+                n = float(tok)
+                return f"floor({_fmt_num(n)}) = {_math.floor(n)}"
+    if "ceiling" in tokens or "ceil" in tokens:
+        for tok in tokens:
+            if tok in ("ceiling", "ceil", "of", "the"):
+                continue
+            if _is_num(tok):
+                n = float(tok)
+                return f"ceil({_fmt_num(n)}) = {_math.ceil(n)}"
+
+    # -- Rounding ------------------------------------------------------------
+    if "round" in tokens:
+        nums = [float(t) for t in tokens if _is_num(t)]
+        if nums:
+            n = nums[0]
+            decimals = int(nums[1]) if len(nums) >= 2 and "decimal" in tokens else 0
+            r = round(n, decimals) if decimals > 0 else round(n)
+            if decimals > 0:
+                return f"round({_fmt_num(n)}, {decimals} decimals) = {_fmt_num(r)}"
+            return f"round({_fmt_num(n)}) = {r}"
+
+    # -- Linear equation solving ---------------------------------------------
+    if "solve" in tokens or ("=" in tokens and any(
+        _LINEAR_VAR_RE.search(t) for t in tokens
+    )):
+        sol = _try_solve_linear(tokens)
+        if sol:
+            return sol
+
+    return None
+
+
 def _try_evaluate_math_question(tokens: list[str]) -> str | None:
     """
-    Detect and evaluate an arithmetic expression embedded in question tokens.
+    Detect and evaluate an arithmetic or mathematical expression in *tokens*.
 
     Handles:
     - Direct expressions: ``5 + 3``, ``10 * (2 + 3)``
@@ -1191,9 +1644,15 @@ def _try_evaluate_math_question(tokens: list[str]) -> str | None:
     - Named operations: ``sum of 5 and 3``, ``product of 4 and 7``
     - Square root: ``square root of 16``
     - Powers: ``2 to the power of 8``, ``2 ^ 8``
+    - Advanced: trig, log, factorial, GCD/LCM, combinations, percentages, etc.
 
     Returns a formatted answer string, or ``None`` if no arithmetic found.
     """
+    # -- Advanced math first (trig, log, factorial, etc.) -------------------
+    adv = _try_evaluate_advanced_math(tokens)
+    if adv is not None:
+        return adv
+
     # -- Square root ---------------------------------------------------------
     if "root" in tokens:
         idx = tokens.index("root")
@@ -1281,6 +1740,136 @@ def _try_evaluate_math_question(tokens: list[str]) -> str | None:
     return f"{display} = {_fmt_num(result)}"
 
 
+# ---------------------------------------------------------------------------
+# Imagination / hypothetical reasoning
+# ---------------------------------------------------------------------------
+
+def _try_imagine_hypothetical(tokens: list[str], facts: list[dict]) -> str | None:
+    """Detect and respond to hypothetical, counterfactual, and analogy queries.
+
+    Handles three patterns:
+
+    1. **Analogy**: "A is to B as C is to ?"
+       Finds the relation between A and B in the fact base and applies it to C.
+       For numeric A/B/C the ratio A:B is used.
+
+    2. **What-if**: "what if [subject] [rel] [value]" / "suppose X is Y"
+       Temporarily adds the hypothetical fact and looks for implications.
+
+    3. **Counterfactual** ("imagine/suppose" followed by a fact clause):
+       Same as what-if but triggered by imagination keywords.
+
+    Returns a natural-language answer string, or ``None`` if no pattern matched.
+    """
+    # ----------------------------------------------------------------
+    # 1. Analogy: "A is to B as C is to ?"
+    # ----------------------------------------------------------------
+    if "as" in tokens and "to" in tokens:
+        try:
+            as_idx = tokens.index("as")
+            to_indices = [i for i, t in enumerate(tokens) if t == "to"]
+            pre_to  = [i for i in to_indices if i < as_idx]
+            post_to = [i for i in to_indices if i > as_idx]
+            if pre_to and post_to:
+                to1_idx = pre_to[-1]
+                to2_idx = post_to[0]
+                _skip = {"is", "are", "the", "a", "an", "?"}
+                a_toks = [t for t in tokens[:to1_idx]           if t not in _skip]
+                b_toks = [t for t in tokens[to1_idx + 1:as_idx] if t not in _skip]
+                c_toks = [t for t in tokens[as_idx + 1:to2_idx] if t not in _skip]
+                if a_toks and b_toks and c_toks:
+                    a_str = " ".join(a_toks)
+                    b_str = " ".join(b_toks)
+                    c_str = " ".join(c_toks)
+                    # Numeric analogy (ratio)
+                    try:
+                        na, nb, nc = float(a_str), float(b_str), float(c_str)
+                        if na != 0:
+                            ratio = nb / na
+                            answer = nc * ratio
+                            return (f"By proportion: {_fmt_num(na)} is to "
+                                    f"{_fmt_num(nb)} (ratio {_fmt_num(ratio)}) "
+                                    f"as {_fmt_num(nc)} is to {_fmt_num(answer)}.")
+                    except ValueError:
+                        pass
+                    # Symbolic analogy: find relation a→b in facts
+                    rel_found: str | None = None
+                    for f in facts:
+                        if (f.get("subject", "").lower() == a_str.lower()
+                                and f.get("value", "").lower() == b_str.lower()):
+                            rel_found = f.get("relation", "")
+                            break
+                    if rel_found:
+                        c_vals = [
+                            f.get("value", "")
+                            for f in facts
+                            if f.get("subject", "").lower() == c_str.lower()
+                            and _rel_match_global(f.get("relation", ""), rel_found)
+                        ]
+                        if c_vals:
+                            return (f"By analogy ({a_str} {rel_found} {b_str}), "
+                                    f"{c_str} {rel_found} {c_vals[0]}.")
+                        return (f"By analogy, if {a_str} {rel_found} {b_str}, "
+                                f"then {c_str} likely {rel_found} something similar, "
+                                f"but I don't have that specific information.")
+        except (ValueError, IndexError):
+            pass
+
+    # ----------------------------------------------------------------
+    # 2 & 3. What-if / suppose / imagine
+    # ----------------------------------------------------------------
+    starts_with_trigger = tokens and tokens[0] in _HYPO_TRIGGERS
+    what_if = (len(tokens) >= 2 and tokens[0] == "what" and tokens[1] == "if")
+
+    if what_if or starts_with_trigger:
+        # Strip trigger words
+        if what_if:
+            hyp_tokens = tokens[2:]
+        else:
+            hyp_tokens = tokens[1:]
+        # Try to split on comma: before comma = hypothesis, after = question
+        comma_idx = hyp_tokens.index(",") if "," in hyp_tokens else -1
+        if comma_idx > 0:
+            hyp_part = hyp_tokens[:comma_idx]
+            q_part   = hyp_tokens[comma_idx + 1:]
+        else:
+            hyp_part = hyp_tokens
+            q_part   = []
+        hyp_fact = _extract_fact_from_tokens(hyp_part)
+        if hyp_fact:
+            subj = hyp_fact.get("subject", "")
+            rel  = hyp_fact.get("relation", "")
+            val  = hyp_fact.get("value", "")
+            # Build a temporary fact set
+            temp_facts = list(facts) + [hyp_fact]
+            # If there's a follow-up question, try to answer it
+            if q_part:
+                # Strip punctuation from follow-up before answering
+                q_clean = [t for t in q_part if t not in (".", "?", "!", ",")]
+                q_answer = _try_answer_question(q_clean, temp_facts)
+                if q_answer:
+                    return (f"Hypothetically, if {subj} {rel} {val}: "
+                            f"{q_answer}")
+            # Otherwise, list known implications of the hypothetical value
+            implications = [
+                f for f in facts
+                if (f.get("value", "").lower() == val.lower()
+                    or f.get("subject", "").lower() == val.lower())
+            ][:3]
+            if implications:
+                imp_str = "; ".join(
+                    f"{f.get('subject','')} {f.get('relation','')} {f.get('value','')}"
+                    for f in implications
+                )
+                return (f"Hypothetically, if {subj} {rel} {val}, "
+                        f"then given what I know: {imp_str}.")
+            return (f"Hypothetically, if {subj} {rel} {val}, "
+                    f"that would be an interesting scenario, "
+                    f"but I don't have further implications yet.")
+
+    return None
+
+
 def _split_sentences(text: str) -> list[tuple[str, bool]]:
     """
     Split *text* into a list of ``(sentence, is_question)`` tuples.
@@ -1288,9 +1877,10 @@ def _split_sentences(text: str) -> list[tuple[str, bool]]:
     Sentences are delimited by ``.``, ``!``, or ``?``.  A sentence ending with
     ``?`` is marked as a question.  Sentences that begin with a WH-question
     word (what, who, where, …) are also treated as questions even if the
-    trailing ``?`` is omitted.
+    trailing ``?`` is omitted.  Sentences beginning with "solve", "calculate",
+    "compute", "find", or "simplify" are also treated as implicit questions.
     """
-    parts = re.split(r"(?<=[.!?])\s*", text.strip())
+    parts = re.split(r'(?<=[.!?])(?!\d)\s*', text.strip())
     result: list[tuple[str, bool]] = []
     for part in parts:
         part = part.strip()
@@ -1298,10 +1888,10 @@ def _split_sentences(text: str) -> list[tuple[str, bool]]:
             continue
         is_question = part.endswith("?")
         clean = part.rstrip(".!?").strip()
-        # Detect implicit WH-questions that lack a trailing "?"
+        # Detect implicit WH-questions and math commands
         if not is_question and clean:
             first = clean.split()[0].lower()
-            if first in _QUESTION_WORDS:
+            if first in _QUESTION_WORDS or first in _MATH_QUESTION_STARTERS:
                 is_question = True
         if clean:
             result.append((clean, is_question))
@@ -1514,6 +2104,7 @@ def _try_answer_question(tokens: list[str], facts: list[dict]) -> str | None:
     - Mathematical questions:    "What is 5 + 3?", "What is the square root of 16?"
     - WH-word differentiation (what vs who vs where vs when vs …).
     - Possessive ``'s`` in the question subject ("what is my car's color?").
+    - Imagination / hypothetical: "What if X is Y?", "A is to B as C is to ?"
     - Related-facts fallback: when no direct answer exists, returns all
       facts known about the subject prefixed with "I don't know … but I
       know that …".
@@ -1528,6 +2119,16 @@ def _try_answer_question(tokens: list[str], facts: list[dict]) -> str | None:
             q_word = tok
             q_idx = i
             break
+
+    # ----------------------------------------------------------------
+    # 0b. Imagination / hypothetical (early check for "suppose X, …"
+    #     and "A is to B as C is to ?" patterns that embed their own
+    #     question clause)
+    # ----------------------------------------------------------------
+    if tokens and tokens[0] in _HYPO_TRIGGERS:
+        imagination_early = _try_imagine_hypothetical(tokens, facts)
+        if imagination_early is not None:
+            return imagination_early
 
     # ----------------------------------------------------------------
     # 1. Path queries: "path to X"  or  "path from X to Y"
@@ -1668,6 +2269,13 @@ def _try_answer_question(tokens: list[str], facts: list[dict]) -> str | None:
         return math_answer
 
     # ----------------------------------------------------------------
+    # 3b. Imagination / hypothetical ("what if", analogy, "suppose")
+    # ----------------------------------------------------------------
+    imagination = _try_imagine_hypothetical(tokens, facts)
+    if imagination is not None:
+        return imagination
+
+    # ----------------------------------------------------------------
     # 4. Standard WH-question forward lookup (existing behaviour)
     # ----------------------------------------------------------------
     if q_word is None:
@@ -1782,6 +2390,11 @@ def _try_answer_question(tokens: list[str], facts: list[dict]) -> str | None:
     if related:
         related_str = " and ".join(related)
         return f"I don't know {wh_clause} {subj_phrase} {a_word}, but I know that {related_str}"
+
+    # -- Imagination / hypothetical reasoning fallback ---------------------
+    imagination = _try_imagine_hypothetical(tokens, facts)
+    if imagination:
+        return imagination
 
     return None
 
@@ -1938,16 +2551,56 @@ class NeuroSymbolicSession:
         ``subject="car"``, ``attribute="color"``, ``relation="is"``,
         ``value="red"``.
 
-        The subject and value tokens are registered as :class:`UniObject`
-        entries so the parser can recognise them.
+        Beyond storing the symbolic triple, this method also:
+
+        - Registers subject/value/attribute as :class:`UniObject` entries so
+          the parser recognises them in future sentences.
+        - **Neural learning**: strengthens the forward association
+          ``subject → value`` in the subject UniObject's ``connections``
+          neural layer, and the reverse association ``value → subject`` in
+          the value UniObject's ``reverse_connections`` neural layer.
+        - **Memory update**: records the relation and value in each
+          UniObject's ``memory`` dict so every node carries a self-contained
+          summary of what it has learned.
         """
-        for token in (subject.lower(), value.lower()):
+        subj_lower = subject.lower()
+        val_lower  = value.lower()
+
+        # Ensure UniObjects exist in the session base
+        for token in (subj_lower, val_lower):
             if token not in self._base.items:
                 self._base.add_item(UniObject(word=token))
         if attribute:
             attr_lower = attribute.lower()
             if attr_lower not in self._base.items:
                 self._base.add_item(UniObject(word=attr_lower))
+
+        # ---- Neural association + memory update --------------------------
+        # Forward: subject → value (via the named relation)
+        for item in self._base.items.get(subj_lower, ()):
+            if isinstance(item, UniObject):
+                item.connections.connect(val_lower)
+                mem_key = f"{relation}:{val_lower}"
+                item.memory[mem_key] = item.memory.get(mem_key, 0) + 1
+                break
+
+        # Reverse: value ← subject
+        for item in self._base.items.get(val_lower, ()):
+            if isinstance(item, UniObject):
+                item.reverse_connections.connect(subj_lower)
+                rev_key = f"←{relation}:{subj_lower}"
+                item.memory[rev_key] = item.memory.get(rev_key, 0) + 1
+                break
+
+        # If an attribute is specified, also link subject → attribute
+        if attribute:
+            attr_lower = attribute.lower()
+            for item in self._base.items.get(subj_lower, ()):
+                if isinstance(item, UniObject):
+                    item.connections.connect(attr_lower, weight=0.4)
+                    break
+        # ------------------------------------------------------------------
+
         fact: dict = {
             "subject": subject,
             "relation": relation,
@@ -1987,17 +2640,54 @@ class NeuroSymbolicSession:
         """
         result = process_input(text, facts=self._facts, base=self._base)
         # Register newly extracted facts in the session base so the parser
-        # recognises these words in future sentences.
+        # recognises these words in future sentences, and build neural
+        # associations for every new fact.
         for fact in result["new_facts"]:
             subj = fact.get("subject", "")
-            val = fact.get("value", "")
+            val  = fact.get("value", "")
+            rel  = fact.get("relation", "")
             attr = fact.get("attribute", "")
             for token in filter(None, [subj.lower() if subj else None,
                                        val.lower() if val else None,
                                        attr.lower() if attr else None]):
                 if token not in self._base.items:
                     self._base.add_item(UniObject(word=token))
+            # Build neural associations for automatically extracted facts
+            if subj and val and rel:
+                subj_l = subj.lower()
+                val_l  = val.lower()
+                for item in self._base.items.get(subj_l, ()):
+                    if isinstance(item, UniObject):
+                        item.connections.connect(val_l)
+                        mem_key = f"{rel}:{val_l}"
+                        item.memory[mem_key] = item.memory.get(mem_key, 0) + 1
+                        break
+                for item in self._base.items.get(val_l, ()):
+                    if isinstance(item, UniObject):
+                        item.reverse_connections.connect(subj_l)
+                        rev_key = f"←{rel}:{subj_l}"
+                        item.memory[rev_key] = item.memory.get(rev_key, 0) + 1
+                        break
         return result
+
+    def neural_associations(self, word: str) -> dict:
+        """Return the neural associations for *word* as a serialisable dict.
+
+        Returns ``{"word": str, "connections": [...], "reverse_connections": [...]}``
+        where each list contains ``{"target": str, "weight": float}`` entries
+        sorted by descending weight.
+        """
+        key = word.lower()
+        fwd: list[dict] = []
+        rev: list[dict] = []
+        for item in self._base.items.get(key, ()):
+            if isinstance(item, UniObject):
+                fwd = [{"target": t, "weight": round(w, 4)}
+                       for t, w in item.connections.top_k(10)]
+                rev = [{"target": t, "weight": round(w, 4)}
+                       for t, w in item.reverse_connections.top_k(10)]
+                break
+        return {"word": word, "connections": fwd, "reverse_connections": rev}
 
     @property
     def facts(self) -> list[dict]:
