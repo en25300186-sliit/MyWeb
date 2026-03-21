@@ -164,7 +164,8 @@ def _get_timetable(user: User, day_of_week: int | None = None, **_) -> dict:
 def _neuro_symbolic_parse(user: User, sentence: str, **_) -> dict:
     """
     Parse a natural language sentence using the neuro-symbolic engine.
-    Returns the tokenised, classified, and connection graph as a dict.
+    Returns the tokenised, classified, and connection graph as a dict,
+    plus neural activation strengths for each object/pronoun token.
     """
     from ai_agent.neuro_symbolic import evaluate_sentence
     return evaluate_sentence(sentence)
@@ -398,12 +399,15 @@ TOOLS: list[dict[str, Any]] = [
             'function': {
                 'name': 'neuro_symbolic_parse',
                 'description': (
-                    'Parse a natural language sentence using the built-in '
+                    'Parse a natural language sentence using the hybrid '
                     'neuro-symbolic AI engine. Returns a symbolic breakdown: '
                     'tokens, their classifications (operator / assignment / '
-                    'pronoun / object), connection graph, and evaluated results '
-                    'for any operators or assignments found in the sentence. '
-                    'Use this to reason about or explain a sentence symbolically.'
+                    'pronoun / object), connection graph, evaluated results '
+                    'for any operators or assignments found in the sentence, '
+                    'and neural activation strengths showing which concepts '
+                    'are associated with each object token. '
+                    'Use this to reason about or explain a sentence symbolically '
+                    'and to inspect the learned neural associations.'
                 ),
                 'parameters': {
                     'type': 'object',
