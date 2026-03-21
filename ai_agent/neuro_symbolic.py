@@ -777,6 +777,10 @@ _ASSIGNMENT_WORDS: frozenset = frozenset({
     "supports", "support",
     "produces", "produce",
     "refers", "refer",
+    # creation / generation
+    "creates", "create",
+    # opening / unlocking
+    "opens", "open",
     # numeric equality (verb form)
     "equal", "equals",
 })
@@ -814,7 +818,7 @@ _DIRECTIONAL_VERBS: frozenset = frozenset({
 # Checked BEFORE single-word _ASSIGNMENT_WORDS so "belongs to" is not
 # mistakenly extracted as the bare relation "belongs".
 _MULTI_WORD_RELATIONS: dict[tuple[str, str], str] = {
-    # directional / graph
+    # directional / graph (conjugated forms used in declarative sentences)
     ("leads", "to"):      "leads to",
     ("goes", "to"):       "goes to",
     ("points", "to"):     "points to",
@@ -825,8 +829,20 @@ _MULTI_WORD_RELATIONS: dict[tuple[str, str], str] = {
     ("takes", "to"):      "takes to",
     ("routes", "to"):     "routes to",
     ("travels", "to"):    "travels to",
+    # directional / graph (base/question forms – "What does X lead to?")
+    ("lead", "to"):       "leads to",
+    ("go", "to"):         "goes to",
+    ("point", "to"):      "points to",
+    ("connect", "to"):    "connects to",
+    ("flow", "to"):       "flows to",
+    ("link", "to"):       "links to",
+    ("move", "to"):       "moves to",
+    ("take", "to"):       "takes to",
+    ("route", "to"):      "routes to",
+    ("travel", "to"):     "travels to",
     # membership / structure
     ("belongs", "to"):    "belongs to",
+    ("belong", "to"):     "belongs to",
     ("part", "of"):       "part of",
     ("consists", "of"):   "consists of",
     ("made", "of"):       "made of",
@@ -855,8 +871,236 @@ _NAMED_MATH_OPS: dict[str, str] = {
 }
 
 # ---------------------------------------------------------------------------
-# Math helpers
+# Relation normalisation helpers
 # ---------------------------------------------------------------------------
+
+# Maps base (uninflected) verb forms to their canonical stored form.
+# Used so questions like "What does X lead to?" match facts like "leads to".
+_RELATION_ALIASES: dict[str, str] = {
+    "create":     "creates",
+    "open":       "opens",
+    "have":       "has",
+    "contain":    "contains",
+    "belong to":  "belongs to",
+}
+
+
+def _canonical_rel(rel: str) -> str:
+    """Return the canonical form of *rel* for relation matching."""
+    r = rel.strip().lower()
+    return _RELATION_ALIASES.get(r, r)
+
+
+def _rel_match_global(r1: str, r2: str) -> bool:
+    """True when *r1* and *r2* represent the same relation.
+
+    Handles:
+    - Exact equality.
+    - Be-verb equivalence (is / are / am / was / were).
+    - Have-verb equivalence (has / have / had).
+    - Canonical alias normalisation (e.g. "create" == "creates").
+    """
+    if r1 == r2:
+        return True
+    c1 = _canonical_rel(r1)
+    c2 = _canonical_rel(r2)
+    if c1 == c2:
+        return True
+    r1l = r1.lower()
+    r2l = r2.lower()
+    if r1l in _BE_VERBS and r2l in _BE_VERBS:
+        return True
+    if r1l in _HAVE_VERBS and r2l in _HAVE_VERBS:
+        return True
+    if c1 in _HAVE_VERBS and c2 in _HAVE_VERBS:
+        return True
+    return False
+
+
+# ---------------------------------------------------------------------------
+# Transitive / chained inference helpers
+# ---------------------------------------------------------------------------
+
+def _collect_is_leaves(subject: str, facts: list[dict],
+                       visited: set[str] | None = None) -> list[str]:
+    """Return the most-specific (leaf) entities that ARE *subject*.
+
+    Starting from *subject*, follows the ``is``/``are`` chain downward
+    (i.e. finds entities X where ``X is subject``).  Recursion stops at
+    nodes that have no further ``is`` children – those are the leaves.
+
+    Cycle-safe via *visited*.
+    """
+    if visited is None:
+        visited = set()
+    subject_lower = subject.lower()
+    if subject_lower in visited:
+        return [subject]
+    visited.add(subject_lower)
+
+    children: list[str] = [
+        f.get("subject", "")
+        for f in facts
+        if f.get("value", "").lower() == subject_lower
+        and f.get("relation", "").lower() in _BE_VERBS
+    ]
+    if not children:
+        return [subject]
+
+    leaves: list[str] = []
+    for child in children:
+        leaves.extend(_collect_is_leaves(child, facts, visited))
+    return leaves
+
+
+def _forward_transitive_lookup(
+    subject: str,
+    target_rel: str,
+    facts: list[dict],
+) -> list[tuple[str, str, str]]:
+    """BFS from *subject* through the fact graph, collecting every fact whose
+    relation matches *target_rel*.
+
+    Returns a list of ``(root_subject, actual_relation, value)`` triples.
+    *root_subject* is always the original *subject* so that the AI can phrase
+    the answer as "Geemeth has brain" even when the fact was found via a chain.
+    """
+    visited: set[str] = set()
+    queue: deque[str] = deque([subject.lower()])
+    results: list[tuple[str, str, str]] = []
+    seen_values: set[str] = set()
+
+    while queue:
+        current = queue.popleft()
+        if current in visited:
+            continue
+        visited.add(current)
+
+        for fact in facts:
+            if fact.get("subject", "").lower() != current:
+                continue
+            fact_rel = fact.get("relation", "")
+            fact_val = fact.get("value", "")
+
+            if _rel_match_global(fact_rel, target_rel):
+                val_key = fact_val.lower()
+                if val_key not in seen_values:
+                    seen_values.add(val_key)
+                    results.append((subject, fact_rel, fact_val))
+
+            val_lower = fact_val.lower()
+            if val_lower not in visited:
+                queue.append(val_lower)
+
+    return results
+
+
+def _reverse_lookup_with_inheritance(
+    value: str,
+    target_rel: str,
+    facts: list[dict],
+) -> list[tuple[str, str]]:
+    """Find all ``(subject, relation)`` pairs where *subject rel value* holds
+    directly or is inherited via the ``is`` chain.
+
+    For each direct match, the function walks *down* the ``is`` chain to find
+    the most-specific (leaf) entity and returns that instead.  This ensures
+    "What has lid?" returns "Box" (the leaf) rather than "Container" (the
+    direct holder), when "Box is container" and "Container has lid".
+
+    Returns a list of ``(leaf_subject, canonical_relation)`` pairs.
+    """
+    value_lower = value.lower()
+
+    direct_subjects: list[str] = [
+        f.get("subject", "")
+        for f in facts
+        if f.get("value", "").lower() == value_lower
+        and _rel_match_global(f.get("relation", ""), target_rel)
+    ]
+    if not direct_subjects:
+        return []
+
+    all_leaves: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    for subj in direct_subjects:
+        for leaf in _collect_is_leaves(subj, facts):
+            key = leaf.lower()
+            if key not in seen:
+                seen.add(key)
+                all_leaves.append((leaf, target_rel))
+    return all_leaves
+
+
+def _yes_no_transitive_check(
+    subject: str,
+    target_value: str,
+    facts: list[dict],
+) -> tuple[bool, str, str]:
+    """Check whether *target_value* is reachable from *subject* via any chain
+    of facts (BFS over the full fact graph).
+
+    Returns ``(found, direct_subject, relation)`` where *direct_subject* is
+    the node immediately before *target_value* and *relation* is the relation
+    on that last edge.
+    """
+    target_lower = target_value.lower()
+    visited: set[str] = set()
+    queue: deque[str] = deque([subject.lower()])
+
+    while queue:
+        current = queue.popleft()
+        if current in visited:
+            continue
+        visited.add(current)
+
+        for fact in facts:
+            if fact.get("subject", "").lower() != current:
+                continue
+            fact_val = fact.get("value", "")
+            fact_rel = fact.get("relation", "")
+
+            if fact_val.lower() == target_lower:
+                return (True, fact.get("subject", ""), fact_rel)
+
+            if fact_val.lower() not in visited:
+                queue.append(fact_val.lower())
+
+    return (False, "", "")
+
+
+def _find_path_between(
+    start: str,
+    target: str,
+    facts: list[dict],
+) -> list[str] | None:
+    """Find the shortest path in the directed fact graph from *start* to
+    *target* using BFS.
+
+    Returns a list of node names (in order), or ``None`` if unreachable.
+    """
+    graph = _build_directed_graph(facts)
+    start_lower  = start.lower().strip()
+    target_lower = target.lower().strip()
+
+    visited: set[str] = set()
+    q: deque[list[str]] = deque([[start_lower]])
+
+    while q:
+        path = q.popleft()
+        node = path[-1]
+        if node == target_lower:
+            return path
+        if node in visited:
+            continue
+        visited.add(node)
+        for neighbor in graph.get(node, []):
+            if neighbor not in visited:
+                q.append(path + [neighbor])
+
+    return None
+
+
 
 # Arithmetic operator symbols used by the math expression parser.
 _ARITH_OPS: frozenset = frozenset({"+", "-", "*", "/", "**"})
@@ -1260,9 +1504,14 @@ def _try_answer_question(tokens: list[str], facts: list[dict]) -> str | None:
     fact is found.
 
     Handles:
-    - Path queries:           "What is the path to Exit?"
-    - Reverse edge lookup:    "What leads to Exit?"
-    - Mathematical questions: "What is 5 + 3?", "What is the square root of 16?"
+    - Path queries:              "What is the path to Exit?"
+                                 "What is the path from Entrance to Exit?"
+    - Reverse edge lookup:       "What leads to Exit?"
+    - Yes/No questions:          "Does Box have gold?"
+    - Forward + transitive:      "What does Geemeth have?"
+                                 "What does Geemeth lead to?"
+    - Reverse + inheritance:     "What has lid?"  "What opens safe?"
+    - Mathematical questions:    "What is 5 + 3?", "What is the square root of 16?"
     - WH-word differentiation (what vs who vs where vs when vs …).
     - Possessive ``'s`` in the question subject ("what is my car's color?").
     - Related-facts fallback: when no direct answer exists, returns all
@@ -1281,11 +1530,14 @@ def _try_answer_question(tokens: list[str], facts: list[dict]) -> str | None:
             break
 
     # ----------------------------------------------------------------
-    # 1. Path-to query: "What is the path to X?"
+    # 1. Path queries: "path to X"  or  "path from X to Y"
     # ----------------------------------------------------------------
     if "path" in tokens:
         path_idx = tokens.index("path")
-        if path_idx + 1 < len(tokens) and tokens[path_idx + 1] == "to":
+        nxt = tokens[path_idx + 1] if path_idx + 1 < len(tokens) else ""
+
+        if nxt == "to":
+            # "path to X"
             target_toks = [t for t in tokens[path_idx + 2:] if t not in _SKIP_WORDS]
             if target_toks:
                 target = " ".join(target_toks)
@@ -1294,6 +1546,28 @@ def _try_answer_question(tokens: list[str], facts: list[dict]) -> str | None:
                     path_display = ", ".join(_format_node_name(w) for w in path)
                     return f"The path to {_format_node_name(target)} is {path_display}."
                 return f"I cannot find a path to {_format_node_name(target)} in what I know."
+
+        elif nxt == "from":
+            # "path from X to Y"
+            from_start = path_idx + 2
+            to_idx = -1
+            for k in range(from_start, len(tokens)):
+                if tokens[k] == "to":
+                    to_idx = k
+                    break
+            if to_idx > from_start:
+                start_toks  = [t for t in tokens[from_start:to_idx] if t not in _SKIP_WORDS]
+                target_toks = [t for t in tokens[to_idx + 1:]       if t not in _SKIP_WORDS]
+                if start_toks and target_toks:
+                    start  = " ".join(start_toks)
+                    target = " ".join(target_toks)
+                    path   = _find_path_between(start, target, facts)
+                    if path:
+                        path_display = ", ".join(_format_node_name(w) for w in path)
+                        return (f"the path from {_format_node_name(start)} to "
+                                f"{_format_node_name(target)} is {path_display}.")
+                    return (f"I cannot find a path from {_format_node_name(start)} "
+                            f"to {_format_node_name(target)}.")
 
     # ----------------------------------------------------------------
     # 2. Reverse directional lookup: "What leads to X?"
@@ -1317,6 +1591,74 @@ def _try_answer_question(tokens: list[str], facts: list[dict]) -> str | None:
                     return f"{subj_str} {rel} {_format_node_name(target_val)}."
                 return (f"I don't know what {rel} {_format_node_name(target_val)} "
                         "based on what I know.")
+
+    # ----------------------------------------------------------------
+    # 2b. Yes/No question: "Does X [rel] Y?"
+    #     Pattern: tokens[0] in {"does","do","did"} (no WH-word at start)
+    # ----------------------------------------------------------------
+    if tokens and tokens[0] in {"does", "do", "did"}:
+        rest = tokens[1:]          # remove auxiliary
+        if len(rest) >= 3:
+            yn_subject = rest[0]
+            # Check for multi-word relation
+            if len(rest) >= 4 and (rest[1], rest[2]) in _MULTI_WORD_RELATIONS:
+                yn_rel      = _MULTI_WORD_RELATIONS[(rest[1], rest[2])]
+                yn_val_toks = [t for t in rest[3:] if t not in _SKIP_WORDS]
+            else:
+                yn_rel      = _canonical_rel(rest[1])
+                yn_val_toks = [t for t in rest[2:] if t not in _SKIP_WORDS]
+
+            if yn_rel and yn_val_toks:
+                yn_val = " ".join(yn_val_toks)
+                # Direct check
+                direct = any(
+                    fact.get("subject", "").lower() == yn_subject.lower()
+                    and _rel_match_global(fact.get("relation", ""), yn_rel)
+                    and fact.get("value", "").lower() == yn_val.lower()
+                    for fact in facts
+                )
+                if direct:
+                    return f"yes, {_format_node_name(yn_subject)} {yn_rel} {yn_val}."
+                # Transitive reachability check
+                found, _last_subj, last_rel = _yes_no_transitive_check(
+                    yn_subject, yn_val, facts
+                )
+                if found:
+                    display_rel = last_rel if last_rel else yn_rel
+                    return (f"yes, {_format_node_name(yn_subject)} "
+                            f"{display_rel} {yn_val}.")
+                return (f"no, I don't know that "
+                        f"{_format_node_name(yn_subject)} {yn_rel} {yn_val}.")
+
+    # ----------------------------------------------------------------
+    # 2c. "What does X [rel]?" – forward lookup with transitive inference
+    #     Pattern: q_word + ("does"/"do"/"did") + subject + relation
+    # ----------------------------------------------------------------
+    if q_word is not None and q_idx + 2 < len(tokens):
+        aux = tokens[q_idx + 1]
+        if aux in {"does", "do", "did"}:
+            after_aux = tokens[q_idx + 2:]
+            subj_cands = [t for t in after_aux if t not in _SKIP_WORDS]
+            if subj_cands:
+                wdoes_subj = subj_cands[0]
+                # tokens after subject
+                subj_pos   = after_aux.index(wdoes_subj)
+                rel_toks   = after_aux[subj_pos + 1:]
+
+                # Determine relation (multi-word takes priority)
+                if len(rel_toks) >= 2 and (rel_toks[0], rel_toks[1]) in _MULTI_WORD_RELATIONS:
+                    wdoes_rel = _MULTI_WORD_RELATIONS[(rel_toks[0], rel_toks[1])]
+                elif rel_toks:
+                    wdoes_rel = _canonical_rel(rel_toks[0])
+                else:
+                    wdoes_rel = ""
+
+                if wdoes_rel:
+                    results = _forward_transitive_lookup(wdoes_subj, wdoes_rel, facts)
+                    if results:
+                        _, actual_rel, value = results[0]
+                        return (f"{_format_node_name(wdoes_subj)} "
+                                f"{actual_rel} {value}.")
 
     # ----------------------------------------------------------------
     # 3. Mathematical question: "What is 5 + 3?", "How much is 10 * 2?"
@@ -1371,16 +1713,6 @@ def _try_answer_question(tokens: list[str], facts: list[dict]) -> str | None:
 
     # -- Helpers ----------------------------------------------------------
 
-    def _rel_match(r1: str, r2: str) -> bool:
-        """True when r1 and r2 belong to the same equivalence class."""
-        if r1 == r2:
-            return True
-        if r1 in _BE_VERBS and r2 in _BE_VERBS:
-            return True
-        if r1 in _HAVE_VERBS and r2 in _HAVE_VERBS:
-            return True
-        return False
-
     # WH-word phrasing for "I don't know" responses
     _wh_clause = {
         "what": "what",
@@ -1417,7 +1749,7 @@ def _try_answer_question(tokens: list[str], facts: list[dict]) -> str | None:
             # Question asks about a specific attribute (X's Y)
             if fact_attribute.lower() != question_attribute.lower():
                 continue
-            if not _rel_match(fact_relation, a_word):
+            if not _rel_match_global(fact_relation, a_word):
                 continue
             if question_attribute:
                 return f"{subj_phrase}'s {fact_attribute} {fact_relation} {fact_value}"
@@ -1427,9 +1759,22 @@ def _try_answer_question(tokens: list[str], facts: list[dict]) -> str | None:
             if fact_attribute:
                 # Skip attribute-type facts in a direct query
                 continue
-            if not _rel_match(fact_relation, a_word):
+            if not _rel_match_global(fact_relation, a_word):
                 continue
             return f"{subj_phrase} {fact_relation} {fact_value}"
+
+    # -- Reverse lookup for non-be-verb relations (e.g. "What has lid?",
+    #    "What opens safe?", "What contains key?")
+    #    We only try reverse lookup when the relation is NOT a be-verb, to
+    #    avoid misinterpreting "What is X?" as a reverse query.
+    # ---------------------------------------------------------------------
+    if not possessive and a_word not in _BE_VERBS:
+        pairs = _reverse_lookup_with_inheritance(subject, a_word, facts)
+        if pairs:
+            answers = []
+            for leaf_subj, leaf_rel in pairs:
+                answers.append(f"{_format_node_name(leaf_subj)} {leaf_rel} {subject}.")
+            return " ".join(answers)
 
     # -- Related-facts fallback -------------------------------------------
     related = _find_related_facts(subject, possessive, facts)
