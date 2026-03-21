@@ -936,6 +936,12 @@ def _strip_leading_articles(tokens: list[str]) -> list[str]:
 _BE_VERBS: frozenset = frozenset({"is", "are", "am", "was", "were"})
 _HAVE_VERBS: frozenset = frozenset({"has", "have", "had"})
 
+# "is a" type relations: one-way classification / instance-of relations.
+# "A is a B" means A is an instance/type of B; the relation is asymmetric
+# (B is NOT necessarily A).  These relations must NOT trigger the symmetric
+# bidirectional neural connection used by plain be-verbs.
+_IS_A_RELATIONS: frozenset = frozenset({"is a", "are a", "am a", "was a", "were a"})
+
 # Assignment relation words (verbs that link subject to value).
 _ASSIGNMENT_WORDS: frozenset = frozenset({
     # be-verbs (identity / description)
@@ -1061,6 +1067,13 @@ _MULTI_WORD_RELATIONS: dict[tuple[str, str], str] = {
     ("must", "be"):       "must be",
     ("may", "be"):        "may be",
     ("might", "be"):      "might be",
+    # be-verb + article "a" → one-way classification / instance-of relation
+    # "A is a B" means A is an instance/type of B (asymmetric; B is NOT A).
+    ("is",   "a"):        "is a",
+    ("are",  "a"):        "are a",
+    ("am",   "a"):        "am a",
+    ("was",  "a"):        "was a",
+    ("were", "a"):        "were a",
 }
 
 # Named math operations recognised in natural-language questions.
@@ -2779,6 +2792,12 @@ class NeuroSymbolicSession:
           ``subject → value`` in the subject UniObject's ``connections``
           neural layer, and the reverse association ``value → subject`` in
           the value UniObject's ``reverse_connections`` neural layer.
+          For plain be-verb relations (``is``, ``are``, ``am``, ``was``,
+          ``were``) – which are **symmetric identity** relations – the forward
+          connection is also added in the *opposite* direction (``value →
+          subject``) so that the neural graph reflects the two-way arrow.
+          ``"is a"``-type relations (one-way classification) do **not** get
+          this symmetric treatment.
         - **Memory update**: records the relation and value in each
           UniObject's ``memory`` dict so every node carries a self-contained
           summary of what it has learned.
@@ -2811,6 +2830,18 @@ class NeuroSymbolicSession:
                 rev_key = f"←{relation}:{subj_lower}"
                 item.memory[rev_key] = item.memory.get(rev_key, 0) + 1
                 break
+
+        # Symmetric forward for plain be-verbs ("is", "are", …):
+        # "A is B" is an identity/equality relation so B → A is equally true.
+        # "is a" (instance-of) relations are intentionally asymmetric and are
+        # excluded via _IS_A_RELATIONS.
+        if relation.lower() in _BE_VERBS:
+            for item in self._base.items.get(val_lower, ()):
+                if isinstance(item, UniObject):
+                    item.connections.connect(subj_lower)
+                    sym_key = f"{relation}:{subj_lower}"
+                    item.memory[sym_key] = item.memory.get(sym_key, 0) + 1
+                    break
 
         # If an attribute is specified, also link subject → attribute
         if attribute:
@@ -2888,6 +2919,16 @@ class NeuroSymbolicSession:
                         rev_key = f"←{rel}:{subj_l}"
                         item.memory[rev_key] = item.memory.get(rev_key, 0) + 1
                         break
+                # Symmetric forward for plain be-verbs: "A is B" → B also
+                # connects forward to A (two-way identity).  "is a" relations
+                # are asymmetric and are excluded via _IS_A_RELATIONS.
+                if rel.lower() in _BE_VERBS:
+                    for item in self._base.items.get(val_l, ()):
+                        if isinstance(item, UniObject):
+                            item.connections.connect(subj_l)
+                            sym_key = f"{rel}:{subj_l}"
+                            item.memory[sym_key] = item.memory.get(sym_key, 0) + 1
+                            break
         return result
 
     def neural_associations(self, word: str) -> dict:
